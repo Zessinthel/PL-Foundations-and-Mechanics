@@ -4,16 +4,17 @@
 %───────────────────────────────────────────────────────────────────────────────
 
 % ─── 1. Selección del flavor (descomentar solo una) ──────────────────────────
-\usepackage[Latte,styleAll]{catppuccinpalette}   % Tema claro
+%\usepackage[Latte,styleAll]{catppuccinpalette}   % Tema claro
 %\usepackage[Frappe,styleAll]{catppuccinpalette} % Tema oscuro
 %\usepackage[Macchiato,styleAll]{catppuccinpalette}% Tema oscuro
-%\usepackage[Mocha,styleAll]{catppuccinpalette}  % Tema oscuro
+\usepackage[Mocha,styleAll]{catppuccinpalette}  % Tema oscuro
 
 % ─── 2. Configuración MANUAL de claro/oscuro (según el flavor elegido) ───────
 % Si elegiste Latte: \darkthemefalse
 % Si elegiste Frappé/Macchiato/Mocha: \darkthemetrue
 \newif\ifdarktheme
-\darkthemefalse   % ← Cambia a \darkthemetrue si usas un flavor oscuro
+%\darkthemefalse   % ← Cambia a \darkthemetrue si usas un flavor oscuro
+\darkthemetrue   % ← Cambia a \darkthemetrue si usas un flavor oscuro
 
 % ─── 3. Página y texto base ─────────────────────────────────────────────────
 \ifdarktheme

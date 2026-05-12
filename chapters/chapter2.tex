@@ -1,0 +1,648 @@
+% =============================================================================
+% CAPÍTULO 2: ANÁLISIS LÉXICO (EL LEXER)
+% =============================================================================
+
+\chapter{Análisis Léxico (El Lexer)}
+\label{ch:analisis_lexico}
+
+El análisis léxico constituye la primera fase del proceso de compilación y actúa como interfaz directa entre el código fuente y el compilador. Su tarea es transformar una secuencia de caracteres en una secuencia de \textit{tokens}, las unidades atómicas con significado gramatical. Este proceso se fundamenta en la teoría de lenguajes regulares y en los autómatas finitos, proporcionando un puente entre la especificación formal y la implementación eficiente \cite{aho2006compilers,sipser2012introduction}.
+
+La figura \ref{fig:compilation-flow} muestra el flujo completo de un compilador, destacando la posición del analizador léxico como primer eslabón de la cadena de traducción.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[node distance=1.5cm, >=latex, every node/.style={draw, rectangle, rounded corners, align=center, minimum width=4cm, minimum height=0.7cm}]
+    \node (src) {Programa fuente};
+    \node (lex) [below=0.6cm of src, fill=CtpBase] {Analizador léxico (Scanner)};
+    \node (syn) [below=0.6cm of lex] {Analizador sintáctico (Parser)};
+    \node (sem) [below=0.6cm of syn] {Analizador semántico};
+    \node (icg) [below=0.6cm of sem] {Generador de código intermedio};
+    \node (opt) [below=0.6cm of icg] {Optimizador de código};
+    \node (gen) [below=0.6cm of opt] {Generador de código objeto};
+
+    \draw[->] (src) -- (lex);
+    \draw[->] (lex) -- (syn);
+    \draw[->] (syn) -- (sem);
+    \draw[->] (sem) -- (icg);
+    \draw[->] (icg) -- (opt);
+    \draw[->] (opt) -- (gen);
+
+    \node[right=0.2cm of lex, draw=none] {Tokens};
+    \node[right=0.2cm of syn, draw=none] {Árbol sintáctico};
+    \node[right=0.2cm of icg, draw=none] {Código intermedio};
+    \node[right=0.2cm of gen, draw=none] {Código objeto};
+  \end{tikzpicture}
+  \caption{Flujo de datos a través de las fases de un compilador.}
+  \label{fig:compilation-flow}
+\end{figure}
+
+\section{El Pipeline del Front-End}
+\label{sec:2_1_pipeline_frontend}
+
+\subsection{Lexemas, Tokens y Patrones}
+
+El analizador léxico (también llamado \textit{scanner} o \textit{lexer}) lee el código fuente carácter por carácter de izquierda a derecha \cite{aho2006compilers}. Su objetivo es identificar \textbf{lexemas}, que son secuencias de caracteres que coinciden con un patrón predefinido para una categoría de \textbf{token} \cite{aho2006compilers}.
+
+\begin{definicion}{Token}
+Un token es un objeto simbólico que representa una unidad gramatical. Se compone generalmente de un nombre de token (categoría) y, opcionalmente, un valor de atributo que apunta a una entrada en la \textbf{tabla de símbolos} \cite{aho2006compilers}.
+\end{definicion}
+
+La tabla \ref{tab:categorias_tokens} muestra algunas categorías típicas de tokens, sus lexemas de ejemplo y una breve descripción.
+
+\begin{acadtable}{tab:categorias_tokens}{Categorías comunes de tokens en el análisis léxico}
+  \begin{tabularx}{\textwidth}{L{3.5cm} L{3.5cm} X}
+    \toprule
+    \headerrow
+    \thead{Categoría (Token)} & \thead{Ejemplo de Lexema} & \thead{Descripción} \\
+    \midrule
+    \texttt{IDENTIFIER} & \texttt{posicion}, \texttt{rate} & Nombres definidos por el usuario. \\
+    \addlinespace
+    \texttt{OPERATOR} & \texttt{=}, \texttt{+}, \texttt{*} & Símbolos de operación aritmética o lógica. \\
+    \addlinespace
+    \texttt{LITERAL} & \texttt{60}, \texttt{3.1415} & Constantes numéricas o de cadena. \\
+    \addlinespace
+    \texttt{KEYWORD} & \texttt{if}, \texttt{while}, \texttt{int} & Palabras reservadas del lenguaje. \\
+    \bottomrule
+  \end{tabularx}
+\end{acadtable}
+
+\begin{observacion}{Base teórica del análisis léxico}
+  El análisis léxico se modela mediante un autómata finito determinista (DFA) basado en una gramática regular. En contraste, el análisis sintáctico requiere un autómata de pila (PDA) y gramáticas libres de contexto \cite{sipser2012introduction}.
+\end{observacion}
+
+\subsection{Gestión de la Tabla de Símbolos}
+
+Durante la tokenización, el lexer identifica nombres (identificadores) y los almacena en la \textbf{tabla de símbolos}. Esta estructura permite al compilador gestionar el alcance y la visibilidad de las variables. El uso de una tabla de cadenas (\textit{strings table}) adicional permite que el flujo de tokens sea más compacto y eficiente al reemplazar cadenas largas por punteros numéricos \cite{aho2006compilers}.
+
+\begin{fisicaconexion}{Señales y tokenización}
+En el procesamiento de señales provenientes de simulaciones estocásticas, el análisis léxico es análogo a la cuantización y etiquetado de una serie de tiempo continua en eventos discretos. Así como el lexer descarta el «ruido» (espacios en blanco y comentarios), un algoritmo de filtrado en física debe aislar los lexemas de datos relevantes de las fluctuaciones térmicas o errores de medición $\equ{\eta}$ antes del análisis espectral.
+\end{fisicaconexion}
+
+\section{Expresiones Regulares}
+\label{sec:2_2_expresiones_regulares}
+
+Las expresiones regulares (ER) constituyen el formalismo estándar para describir patrones léxicos. Definen conjuntos regulares de cadenas de manera inductiva, facilitando la especificación compacta de los tokens de un lenguaje.
+
+\begin{definicion}{Expresión regular}
+Sea $\eqdom{\Sigma}$ un alfabeto finito. Las expresiones regulares sobre $\eqdom{\Sigma}$ y los conjuntos regulares que denotan se definen inductivamente como \cite{sipser2012introduction}:
+\begin{enumerate}
+    \item $\eqk{\Phi}$ denota el conjunto vacío $\eqdom{\emptyset}$.
+    \item $\eqk{\Lambda}$ denota el conjunto $\eqdom{\{}\eqcon{\varepsilon}\eqdom{\}}$ (la cadena vacía).
+    \item $\eqk{a}$ (para cualquier $\eqk{a} \in \eqdom{\Sigma}$) denota el conjunto $\eqdom{\{}\eqk{a}\eqdom{\}}$.
+    \item Si $\equ{p}$ y $\equ{q}$ son expresiones regulares que denotan los conjuntos $\eqdom{P}$ y $\eqdom{Q}$ respectivamente, entonces:
+      \begin{itemize}
+        \item $(\equ{p} \eqop{\mid} \equ{q})$ denota la unión $\eqdom{P} \eqop{\cup} \eqdom{Q}$.
+        \item $(\equ{p} \equ{q})$ denota la concatenación $\eqdom{PQ}$.
+        \item $(\equ{p})\eqop{*}$ denota la clausura de Kleene $\eqdom{P}\eqop{*}$ (cerradura estrella).
+      \end{itemize}
+    \item Nada más es una expresión regular.
+\end{enumerate}
+Adicionalmente, se define la clausura positiva como $\equ{p}\eqop{^+} = \equ{p} \equ{p}\eqop{*}$.
+\end{definicion}
+
+La tabla \ref{tab:regexp-examples} muestra ejemplos de expresiones regulares y los lenguajes que describen.
+
+\begin{acadtable}{tab:regexp-examples}{Ejemplos de expresiones regulares y sus lenguajes descritos}
+  \begin{tabularx}{\textwidth}{X X}
+    \toprule
+    \headerrow \thead{Expresión regular} & \thead{Lenguaje descrito} \\ \midrule
+    $\eqk{a} \eqop{\mid} \eqk{b}$ & $\eqdom{\{} \eqk{a, b} \eqdom{\}}$ \\ \addlinespace
+    $(\eqk{a} \eqop{\mid} \eqk{b})(\eqk{a} \eqop{\mid} \eqk{b})$ & $\eqdom{\{} \eqk{aa, ab, ba, bb} \eqdom{\}}$ \\ \addlinespace
+    $\eqk{a}\eqop{*}$ & $\eqdom{\{} \eqcon{\varepsilon}\eqdom{,} \eqk{a, aa, aaa, \dots} \eqdom{\}}$ \\ \addlinespace
+    $\eqk{a}\eqop{*} \eqk{b}$ & $\eqdom{\{} \eqk{b, ab, aab, aaab, \dots} \eqdom{\}}$ \\ \addlinespace
+    $(\eqk{a} \eqop{\mid} \eqk{b})\eqop{*}$ & $\eqdom{\{} \eqcon{\varepsilon}\eqdom{,} \eqk{a, b, aa, ab, ba, bb, aaa, \dots} \eqdom{\}}$ \\ \bottomrule
+  \end{tabularx}
+\end{acadtable}
+
+\subsection{Ejemplo de expresión regular compleja}
+
+Consideremos la expresión regular que define un patrón de búsqueda para flujos de bits específicos:
+\[
+(\eqk{1}\eqk{0}\eqop{*}\eqk{1}(\eqk{0} \eqop{\mid} \eqk{1})\eqop{*}) \eqop{\mid} (\eqk{0}\eqk{1}\eqop{*}\eqk{0}(\eqk{0} \eqop{\mid} \eqk{1})\eqop{*})
+\]
+Esta expresión describe cadenas que comienzan con $\eqk{1}$ seguido de cero o más ceros, luego un $\eqk{1}$, y luego cualquier secuencia de $\eqk{0}$ y $\eqk{1}$; o que comienzan con $\eqk{0}$ seguido de cero o más unos, luego un $\eqk{0}$, y luego cualquier secuencia. El autómata finito no determinista (NFA) correspondiente se muestra en la \cref{fig:complex-re-nfa}.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[shorten >=1pt, node distance=2.5cm, on grid, auto, thick,
+    state/.style={circle, draw=CtpBlue, fill=CtpBase, text=CtpText}]
+    
+    \node[state, initial] (A) {$A$};
+    \node[state] (C) [above right=of A] {$C$};
+    \node[state] (D) [right=of C] {$D$};
+    \node[state, accepting] (F1) [right=of D] {$F_1$};
+    \node[state] (B) [below right=of A] {$B$};
+    \node[state] (E) [right=of B] {$E$};
+    \node[state, accepting] (F2) [right=of E] {$F_2$};
+
+    \path[->, color=CtpText] 
+    (A) edge node {$\eqk{0}$} (C)
+    (A) edge node[swap] {$\eqk{1}$} (B)
+    (C) edge[loop above] node {$\eqk{1}$} (C)
+    (C) edge node {$\eqk{0}$} (D)
+    (D) edge[loop above] node {$\eqk{0}\eqop{,}\eqk{1}$} (D)
+    (D) edge node {$\eqcon{\varepsilon}$} (F1)
+    (B) edge[loop below] node {$\eqk{0}$} (B)
+    (B) edge node {$\eqk{1}$} (E)
+    (E) edge[loop below] node {$\eqk{0}\eqop{,}\eqk{1}$} (E)
+    (E) edge node {$\eqcon{\varepsilon}$} (F2);
+  \end{tikzpicture}
+  \caption{NFA para la expresión regular $(\eqk{1}\eqk{0}\eqop{*}\eqk{1}(\eqk{0} \eqop{\mid} \eqk{1})\eqop{*}) \eqop{\mid} (\eqk{0}\eqk{1}\eqop{*}\eqk{0}(\eqk{0} \eqop{\mid} \eqk{1})\eqop{*})$.}
+  \label{fig:complex-re-nfa}
+\end{figure}
+
+\section{Autómatas Finitos (NFA y DFA)}
+\label{sec:2_3_automata_finito}
+
+\subsection{Autómatas Finitos Deterministas (DFA)}
+
+Un DFA es un modelo matemático que reconoce lenguajes regulares mediante una función de transición determinista.
+
+\begin{definicion}{Autómata Finito Determinista (DFA)}
+  Un DFA es una 5-tupla $\eqk{M} = (\eqdom{Q}, \eqdom{\Sigma}, \eqop{\delta}, \eqk{q_0}, \eqdom{F})$ donde \cite{sipser2012introduction}:
+  \begin{itemize}
+    \item $\eqdom{Q}$ es un conjunto finito no vacío de estados.
+    \item $\eqdom{\Sigma}$ es un conjunto finito de símbolos de entrada (alfabeto).
+    \item $\eqop{\delta} : \eqdom{Q} \eqop{\times} \eqdom{\Sigma} \eqop{\rightarrow} \eqdom{Q}$ es la función de transición (o función de movimiento).
+    \item $\eqk{q_0} \eqop{\in} \eqdom{Q}$ es el estado inicial.
+    \item $\eqdom{F} \eqop{\subseteq} \eqdom{Q}$ es el conjunto de estados finales o de aceptación.
+  \end{itemize}
+  Un DFA no posee $\eqcon{\varepsilon}$-transiciones y para cada par $(\equ{q}, \equ{a})$, donde $\equ{q} \eqop{\in} \eqdom{Q}$ y $\equ{a} \eqop{\in} \eqdom{\Sigma}$, existe a lo sumo una transición definida por $\eqop{\delta}$.
+\end{definicion}
+
+\subsection{Autómatas Finitos No Deterministas (NFA)}
+
+Un NFA relaja las restricciones del DFA, permitiendo múltiples transiciones para un mismo símbolo de entrada o incluso transiciones sin leer entrada alguna ($\epsilon$-transiciones) \cite{sipser2012introduction}.
+
+\begin{definicion}{Autómata Finito No Determinista (NFA)}
+  Un NFA es una 5-tupla $\eqk{M} = (\eqdom{Q}, \eqdom{\Sigma}, \eqop{\delta}, \eqk{q_0}, \eqdom{F})$, donde la función de transición tiene la forma \cite{sipser2012introduction}:
+  \[
+  \eqop{\delta} : \eqdom{Q} \eqop{\times} \eqdom{\Sigma_\epsilon} \eqop{\to} \eqop{P}(\eqdom{Q})
+  \]
+  donde $\eqdom{\Sigma_\epsilon} = \eqdom{\Sigma} \eqop{\cup} \eqdom{\{}\eqcon{\varepsilon}\eqdom{\}}$ y $\eqop{P}(\eqdom{Q})$ representa el conjunto potencia (o conjunto de todos los subconjuntos) de $\eqdom{Q}$.
+\end{definicion}
+
+
+\subsection{Construcción de Thompson}
+
+Para convertir una expresión regular en un NFA, se utiliza la \textbf{Construcción de Thompson}, un proceso inductivo que construye fragmentos de autómatas para cada operador regular \cite{aho2006compilers}. Las reglas inductivas se muestran en la figura \ref{fig:thompson}.
+
+\begin{figure}[htbp]
+  \centering
+  \tikzset{
+    state/.style={circle, draw=CtpBlue, fill=CtpBase, text=CtpText, thick, minimum size=0.8cm},
+    every edge/.style={draw=CtpText, thick, ->, >=latex}
+  }
+
+  % Caso base 1: epsilon
+  \begin{minipage}[b]{0.30\textwidth}
+    \centering
+    \begin{tikzpicture}[shorten >=1pt, node distance=1.5cm, on grid, auto]
+      \node[state, initial, initial text={}] (q0) {};
+      \node[state, accepting, right=of q0] (q1) {};
+      \path (q0) edge node {$\eqcon{\varepsilon}$} (q1);
+    \end{tikzpicture}
+    \subcaption{Expresión $\eqcon{\varepsilon}$}
+  \end{minipage}
+  \hfill
+  % Caso base 2: símbolo a
+  \begin{minipage}[b]{0.30\textwidth}
+    \centering
+    \begin{tikzpicture}[shorten >=1pt, node distance=1.5cm, on grid, auto]
+      \node[state, initial, initial text={}] (q0) {};
+      \node[state, accepting, right=of q0] (q1) {};
+      \path (q0) edge node {$\eqk{a}$} (q1);
+    \end{tikzpicture}
+    \subcaption{Símbolo $\eqk{a} \eqop{\in} \eqdom{\Sigma}$}
+  \end{minipage}
+  \hfill
+  % Caso composición: unión (R|S)
+  \begin{minipage}[b]{0.45\textwidth}
+    \centering
+    \begin{tikzpicture}[shorten >=1pt, node distance=1.8cm, on grid, auto]
+      \node[state, initial, initial text={}] (q0) {};
+      \node[state, above right=of q0, xshift=0.5cm] (q1) {};
+      \node[state, below right=of q0, xshift=0.5cm] (q2) {};
+      \node[state, right=of q1] (q3) {};
+      \node[state, right=of q2] (q4) {};
+      \node[state, accepting, below right=of q3, xshift=0.5cm] (q5) {};
+      
+      \path (q0) edge node {$\eqcon{\varepsilon}$} (q1)
+            (q0) edge node[below left] {$\eqcon{\varepsilon}$} (q2)
+            (q1) edge node {$\equ{R}$} (q3)
+            (q2) edge node {$\equ{S}$} (q4)
+            (q3) edge node {$\eqcon{\varepsilon}$} (q5)
+            (q4) edge node[below right] {$\eqcon{\varepsilon}$} (q5);
+    \end{tikzpicture}
+    \subcaption{Unión $\equ{R} \eqop{\mid} \equ{S}$}
+  \end{minipage}
+
+  \vspace{1cm}
+
+  % Caso composición: concatenación (R S)
+  \begin{minipage}[b]{0.45\textwidth}
+    \centering
+    \begin{tikzpicture}[shorten >=1pt, node distance=1.8cm, on grid, auto]
+      \node[state, initial, initial text={}] (q0) {};
+      \node[state, right=of q0] (q1) {};
+      \node[state, right=of q1] (q2) {};
+      \node[state, accepting, right=of q2] (q3) {};
+      
+      \path (q0) edge node {$\equ{R}$} (q1)
+            (q1) edge node {$\eqcon{\varepsilon}$} (q2)
+            (q2) edge node {$\equ{S}$} (q3);
+    \end{tikzpicture}
+    \subcaption{Concatenación $\equ{R}\,\equ{S}$}
+  \end{minipage}
+  \hfill
+  % Caso composición: estrella de Kleene (R*)
+  \begin{minipage}[b]{0.45\textwidth}
+    \centering
+    \begin{tikzpicture}[shorten >=1pt, node distance=1.8cm, on grid, auto]
+      \node[state, initial, initial text={}] (q0) {};
+      \node[state, right=of q0] (q1) {};
+      \node[state, right=of q1] (q2) {};
+      \node[state, accepting, right=of q2] (q3) {};
+      
+      \path (q0) edge node {$\eqcon{\varepsilon}$} (q1)
+            (q1) edge node {$\equ{R}$} (q2)
+            (q2) edge node[near start] {$\eqcon{\varepsilon}$} (q3)
+            (q2) edge[bend right=60] node[above] {$\eqcon{\varepsilon}$} (q1)
+            (q0) edge[bend left=60] node[below] {$\eqcon{\varepsilon}$} (q3);
+    \end{tikzpicture}
+    \subcaption{Clausura $\equ{R}\eqop{*}$}
+  \end{minipage}
+  
+  \caption{Construcción de Thompson: reglas inductivas para traducir una expresión regular a un NFA con exactamente un estado inicial y un estado final \cite{sipser2012introduction}.}
+  \label{fig:thompson}
+\end{figure}
+
+
+\begin{ejemplo}{NFA para el patrón $(\eqk{a} \eqop{\mid} \eqk{b})\eqop{*} \eqk{abb}$}
+A partir de la expresión regular $(\eqk{a} \eqop{\mid} \eqk{b})\eqop{*} \eqk{abb}$, se construye el NFA mostrado en la \cref{fig:nfa-abb}. Este autómata reconoce todas las cadenas sobre el alfabeto $\eqdom{\{} \eqk{a, b} \eqdom{\}}$ que poseen el sufijo específico $\eqk{abb}$ \cite{sipser2012introduction}.
+
+\begin{center}
+  \begin{tikzpicture}[shorten >=1pt, node distance=2cm, on grid, auto, thick,
+    state/.style={circle, draw=CtpBlue, fill=CtpBase, text=CtpText}]
+    
+    \node[state, initial] (0) {$0$};
+    \node[state] (1) [right=of 0] {$1$};
+    \node[state] (2) [right=of 1] {$2$};
+    \node[state, accepting] (3) [right=of 2] {$3$};
+
+    \path[->, color=CtpText] 
+    (0) edge[loop above] node {\eqk{a}\eqop{,}\eqk{b}} (0)
+        edge node {\eqk{a}} (1)
+    (1) edge node {\eqk{b}} (2)
+    (2) edge node {\eqk{b}} (3);
+  \end{tikzpicture}
+  \captionof{figure}{NFA simplificado para el lenguaje $(\eqk{a} \eqop{\mid} \eqk{b})\eqop{*} \eqk{abb}$.}
+  \label{fig:nfa-abb}
+\end{center}
+\end{ejemplo}
+
+\section{Del NFA al DFA: Construcción de Subconjuntos}
+\label{sec:2_4_subconjuntos}
+
+\subsection{Operaciones de Clausura y Movimiento}
+
+Como se demostró en el Teorema 1.39 de Sipser, todo NFA tiene un DFA equivalente que reconoce el mismo lenguaje \cite{sipser2012introduction}. El algoritmo de \textbf{Construcción de Subconjuntos} (\textit{Subset Construction}) sistematiza esta equivalencia identificando conjuntos de estados del NFA que presentan un comportamiento similar ante un mismo símbolo de entrada, colapsándolos en un único estado del DFA resultante \cite{aho2006compilers}.
+
+\begin{definicion}{Operaciones de Clausura y Movimiento}
+Para un conjunto de estados del NFA $\eqdom{T}$ y un símbolo del alfabeto $\equ{a} \eqop{\in} \eqdom{\Sigma}$, definimos las funciones base del algoritmo de construcción de subconjuntos como \cite{sipser2012introduction}:
+\begin{enumerate}
+    \item \textbf{Clausura-$\eqcon{\varepsilon}$ ($\eqop{E}(\equ{s})$):} El conjunto de estados del NFA alcanzables desde el estado $\equ{s}$ siguiendo únicamente transiciones etiquetadas con $\eqcon{\varepsilon}$, incluyéndose a sí mismo.
+    \item \textbf{Clausura-$\eqcon{\varepsilon}$ del conjunto ($\eqop{E}(\eqdom{T})$):} El conjunto de estados alcanzables desde cualquier $\equ{s} \eqop{\in} \eqdom{T}$ mediante transiciones $\eqcon{\varepsilon}$:
+    \[
+    \eqop{E}(\eqdom{T}) = \eqop{\bigcup}_{\equ{s} \eqop{\in} \eqdom{T}} \eqop{E}(\equ{s})
+    \]
+    \item \textbf{Función de Movimiento ($\eqop{move}(\eqdom{T}, \equ{a})$):} El conjunto de estados del NFA hacia los cuales hay una transición con el símbolo $\equ{a}$ desde algún estado en $\eqdom{T}$.
+\end{enumerate}
+\end{definicion}
+
+\subsection{Especificación del Algoritmo}
+
+El algoritmo construye de forma iterativa el conjunto de estados $\eqdom{Q'}$ y la función de transición $\eqop{\delta'}$ del DFA equivalente.
+
+\begin{algorithm}[H]
+    \DontPrintSemicolon
+    \SetKwInOut{Input}{Entrada}\SetKwInOut{Output}{Salida}
+    \Input{Un NFA $\eqk{N} = (\eqdom{Q}, \eqdom{\Sigma}, \eqop{\delta}, \eqk{q_0}, \eqdom{F})$}
+    \Output{Un DFA $\eqk{D} = (\eqdom{Q'}, \eqdom{\Sigma}, \eqop{\delta'}, \eqk{q'_0}, \eqdom{F'})$}
+    
+    $\eqk{q'_0} \eqop{\gets} \eqop{E}(\eqdom{\{}\eqk{q_0}\eqdom{\}})$\;
+    Añadir $\eqk{q'_0}$ a $\eqdom{Q'}$ como estado no marcado\;
+    \While{exista un estado $\equ{T} \eqop{\in} \eqdom{Q'}$ no marcado}{
+        Marcar $\equ{T}$\;
+        \For{cada símbolo de entrada $\equ{a} \eqop{\in} \eqdom{\Sigma}$}{
+            $\equ{U} \eqop{\gets} \eqop{E}(\eqop{move}(\equ{T}, \equ{a}))$\;
+            \If{$\equ{U} \eqop{\notin} \eqdom{Q'}$}{
+                Añadir $\equ{U}$ a $\eqdom{Q'}$ como estado no marcado\;
+            }
+            $\eqop{\delta'}(\equ{T}, \equ{a}) \eqop{\gets} \equ{U}$\;
+        }
+    }
+    \caption{Construcción de Subconjuntos \cite{aho2006compilers, sipser2012introduction}}
+\end{algorithm}
+
+
+\begin{ejemplo}{Aplicación de la construcción de subconjuntos al patrón $(\eqk{a} \eqop{\mid} \eqk{b})\eqop{*} \eqk{abb}$}
+Aplicando el algoritmo de construcción de subconjuntos a partir del NFA detallado en la \cref{fig:nfa-abb} (utilizando la numeración de estados de la construcción de Thompson [1]):
+
+\begin{itemize}
+  \item $\equ{A} \eqop{=} \eqop{E}(\eqdom{\{}\eqk{0}\eqdom{\}}) \eqop{=} \eqdom{\{} \eqk{0,1,2,4,7} \eqdom{\}}.$
+  \item $\eqop{E}(\eqop{move}(\equ{A}, \eqk{a})) \eqop{=} \eqdom{\{} \eqk{1,2,3,4,6,7,8} \eqdom{\}} \eqop{=} \equ{B}.$
+  \item $\eqop{E}(\eqop{move}(\equ{A}, \eqk{b})) \eqop{=} \eqdom{\{} \eqk{1,2,4,5,6,7} \eqdom{\}} \eqop{=} \equ{C}.$
+  \item Continuando el proceso iterativo, se obtienen los estados $\equ{D}$ (que contiene el estado de aceptación \eqk{9}) y $\equ{E}$ (que contiene el estado de aceptación final \eqk{10}).
+\end{itemize}
+
+La dinámica de transiciones se sistematiza en la \cref{tab:dfa-transition} y el autómata resultante se presenta en la \cref{fig:dfa-subset}.
+
+\begin{center}
+\begin{tabular}{c|cc}
+\toprule
+\thead{Estado} & \thead{Entrada $\eqk{a}$} & \thead{Entrada $\eqk{b}$} \\
+\midrule
+$\equ{A}$ & $\equ{B}$ & $\equ{C}$ \\ \addlinespace
+$\equ{B}$ & $\equ{B}$ & $\equ{D}$ \\ \addlinespace
+$\equ{C}$ & $\equ{B}$ & $\equ{C}$ \\ \addlinespace
+$\equ{D}$ & $\equ{B}$ & $\equ{E}$ \\ \addlinespace
+$\equ{E}$ & $\equ{B}$ & $\equ{C}$ \\
+\bottomrule
+\end{tabular}
+\captionof{table}{Tabla de transición del DFA para $(\eqk{a} \eqop{\mid} \eqk{b})\eqop{*} \eqk{abb}$}
+\label{tab:dfa-transition}
+\end{center}
+
+\begin{center}
+  \begin{tikzpicture}[shorten >=1pt, node distance=2.5cm, on grid, auto, thick,
+    state/.style={circle, draw=CtpBlue, fill=CtpBase, text=CtpText}]
+    
+    \node[state, initial] (A) {$\equ{A}$};
+    \node[state] (B) [right=of A] {$\equ{B}$};
+    \node[state] (C) [above=of B] {$\equ{C}$};
+    \node[state] (D) [right=of B] {$\equ{D}$};
+    \node[state, accepting] (E) [right=of D] {$\equ{E}$};
+
+    \path[->, color=CtpText] 
+    (A) edge node {$\eqk{a}$} (C)
+        edge node[swap] {$\eqk{b}$} (B)
+    (B) edge[loop above] node {$\eqk{a}$} (B)
+        edge node {$\eqk{b}$} (D)
+    (C) edge[loop above] node {$\eqk{b}$} (C)
+        edge node[swap] {$\eqk{a}$} (B)
+    (D) edge node {$\eqk{b}$} (E)
+        edge[bend left] node {$\eqk{a}$} (B)
+    (E) edge node {$\eqk{a}$} (B)
+        edge[bend right] node[swap] {$\eqk{b}$} (C);
+  \end{tikzpicture}
+  \captionof{figure}{DFA completo obtenido por construcción de subconjuntos \cite{sipser2012introduction}.}
+  \label{fig:dfa-subset}
+\end{center}
+\end{ejemplo}
+
+\section{Optimización Léxica: Minimización de DFA}
+\label{sec:2_5_minimizacion}
+
+\subsection{Indistinguibilidad de Estados}
+Un DFA generado por la construcción de subconjuntos puede contener estados redundantes que incrementan innecesariamente la complejidad del modelo. La minimización busca la partición más fina del conjunto de estados tal que los estados en cada grupo sean indistinguibles bajo cualquier cadena de entrada $\equ{w} \eqop{\in} \eqdom{\Sigma^*}$ \cite{sipser2012introduction}.
+
+\begin{proposicion}{Indistinguibilidad de Estados}
+Dos estados $\equ{s}$ y $\equ{t}$ son indistinguibles si para toda cadena $\equ{w} \eqop{\in} \eqdom{\Sigma^*}$, el autómata iniciado en $\equ{s}$ acepta $\equ{w}$ $\eqop{\iff}$ iniciado en $\equ{t}$ también acepta $\equ{w}$.
+\end{proposicion}
+
+\subsection{Algoritmo de Minimización}
+
+El algoritmo de minimización particiona el conjunto de estados en grupos de estados equivalentes, refinando iterativamente la partición hasta obtener la configuración más fina posible donde los estados de cada grupo sean indistinguibles entre sí.
+
+\begin{algorithm}[H]
+\caption{Minimización de DFA \cite{aho2006compilers}}
+\label{alg:minimize}
+\KwIn{DFA $\eqk{D} = (\eqdom{Q}, \eqdom{\Sigma}, \eqop{\delta}, \eqk{q_0}, \eqdom{F})$}
+\KwOut{DFA mínimo $\eqk{D_{\min}}$}
+\BlankLine
+Inicializar la partición $\equ{P} \eqop{:=} \eqdom{\{} \eqdom{F}, \eqdom{Q} \eqop{\setminus} \eqdom{F} \eqdom{\}}$\;
+\While{$\equ{P_{\text{new}}} \eqop{\neq} \equ{P}$}{
+  $\equ{P_{\text{new}}} \eqop{:=} \eqdom{\emptyset}$\;
+  \ForEach{grupo $\equ{G} \eqop{\in} \equ{P}$}{
+    Dividir $\equ{G}$ en subgrupos tales que dos estados $\equ{s}, \equ{t} \eqop{\in} \equ{G}$ permanezcan en el mismo subgrupo si y solo si para todo símbolo $\equ{a} \eqop{\in} \eqdom{\Sigma}$, los estados alcanzables $\eqop{\delta}(\equ{s}, \equ{a})$ y $\eqop{\delta}(\equ{t}, \equ{a})$ pertenecen al mismo grupo dentro de la partición $\equ{P}$\;
+    Reemplazar $\equ{G}$ en $\equ{P_{\text{new}}}$ por la colección de subgrupos formados\;
+  }
+  $\equ{P} \eqop{\gets} \equ{P_{\text{new}}}$\;
+}
+\BlankLine
+Elegir un estado representante para cada grupo de la partición final $\equ{P}$\;
+Construir el DFA mínimo $\eqk{D_{\min}}$ sustituyendo cada estado por el representante de su grupo correspondiente\;
+\Return{$\eqk{D_{\min}}$}
+\end{algorithm}
+
+\begin{ejemplo}{Minimización del DFA de la \cref{fig:dfa-subset}}
+Aplicando el algoritmo de Hopcroft sobre el conjunto de estados $\eqdom{\{}\equ{A, B, C, D, E}\eqdom{\}}$ obtenido en el paso anterior:
+
+\begin{enumerate}
+    \item \textbf{Partición Inicial:} Se divide el conjunto según la aceptación:
+    $\equ{P} \eqop{=} \eqdom{\{} \eqdom{\{}\equ{A, B, C, D}\eqdom{\}}, \eqdom{\{}\equ{E}\eqdom{\}} \eqdom{\}}$ (donde $\equ{E}$ es el único estado de aceptación).
+    
+    \item \textbf{Primer Refinamiento:} En el grupo $\eqdom{\{}\equ{A, B, C, D}\eqdom{\}}$, el estado $\equ{D}$ posee una transición con la entrada $\eqk{b}$ hacia $\equ{E}$ (un grupo distinto), mientras que $\equ{A, B, C}$ permanecen en el grupo inicial. La partición se refina a: 
+    $\equ{P} \eqop{=} \eqdom{\{} \eqdom{\{}\equ{A, B, C}\eqdom{\}}, \eqdom{\{}\equ{D}\eqdom{\}}, \eqdom{\{}\equ{E}\eqdom{\}} \eqdom{\}}$.
+    
+    \item \textbf{Segundo Refinamiento:} En el grupo $\eqdom{\{}\equ{A, B, C}\eqdom{\}}$, el estado $\equ{B}$ posee una transición con $\eqk{b}$ hacia $\equ{D}$, mientras que $\equ{A}$ y $\equ{C}$ transicionan hacia sí mismos o entre sí. Se separa a $\equ{B}$: 
+    $\equ{P_{\text{final}}} \eqop{=} \eqdom{\{} \eqdom{\{}\equ{A, C}\eqdom{\}}, \eqdom{\{}\equ{B}\eqdom{\}}, \eqdom{\{}\equ{D}\eqdom{\}}, \eqdom{\{}\equ{E}\eqdom{\}} \eqdom{\}}$.
+\end{enumerate}
+
+Se selecciona a $\equ{A}$ como el estado representante de la clase de equivalencia $\eqdom{\{}\equ{A, C}\eqdom{\}}$. El DFA minimizado se presenta en la \cref{fig:dfa-minimized} y su dinámica de transiciones en la \cref{tab:minimized}.
+
+\begin{center}
+  \begin{tabular}{c | cc}
+    \toprule
+    \thead{Estado (DFA)} & \thead{Entrada $\eqk{a}$} & \thead{Entrada $\eqk{b}$} \\ \midrule
+    $\equ{A}$ & $\equ{B}$ & $\equ{A}$ \\ \addlinespace
+    $\equ{B}$ & $\equ{B}$ & $\equ{D}$ \\ \addlinespace
+    $\equ{D}$ & $\equ{B}$ & $\equ{E}$ \\ \addlinespace
+    $\equ{E}$ & $\equ{B}$ & $\equ{A}$ \\ \bottomrule
+  \end{tabular}
+  \captionof{table}{Tabla de transición del DFA minimizado para $(\eqk{a} \eqop{\mid} \eqk{b})\eqop{*} \eqk{abb}$.}
+  \label{tab:minimized}
+\end{center}
+
+\begin{center}
+  \begin{tikzpicture}[shorten >=1pt, node distance=2.5cm, on grid, auto, thick,
+    state/.style={circle, draw=CtpBlue, fill=CtpBase, text=CtpText}]
+    
+    \node[state, initial] (A) {$\equ{A}$};
+    \node[state] (B) [right=of A] {$\equ{B}$};
+    \node[state] (D) [right=of B] {$\equ{D}$};
+    \node[state, accepting] (E) [right=of D] {$\equ{E}$};
+
+    \path[->, color=CtpText] 
+    (A) edge[loop above] node {\eqk{b}} (A)
+        edge node {\eqk{a}} (B)
+    (B) edge[loop above] node {\eqk{a}} (B)
+        edge node {\eqk{b}} (D)
+    (D) edge node {\eqk{b}} (E)
+        edge[bend left] node {\eqk{a}} (B)
+    (E) edge node {\eqk{a}} (B)
+        edge[bend right] node[swap] {\eqk{b}} (A);
+  \end{tikzpicture}
+  \captionof{figure}{DFA mínimo obtenido tras el algoritmo de Hopcroft \cite{sipser2012introduction}.}
+  \label{fig:dfa-minimized}
+\end{center}
+\end{ejemplo}
+
+\begin{fisicaconexion}{Minimización y reducción de orden en modelos físicos}
+La minimización de estados es análoga a la reducción de orden en modelos de sistemas físicos. En la simulación de un reactor, si dos configuraciones internas producen la misma respuesta macroscópica (por ejemplo, misma reactividad $\eqk{\rho}$) ante cualquier estímulo de flujo neutrónico, pueden agruparse en una única variable de estado efectiva para simplificar el cómputo sin perder precisión en las \textbf{16 cifras significativas} deseadas.
+\end{fisicaconexion}
+
+\section{Implementación Práctica del Análisis Léxico}
+\label{sec:2_6_implementacion}
+
+\subsection{Enfoques de implementación}
+
+Para construir un analizador léxico, se pueden seguir dos enfoques principales:
+\begin{enumerate}
+    \item Diseñar un diagrama de estados y escribir un programa que lo implemente directamente.
+    \item Describir formalmente los tokens mediante expresiones regulares y utilizar una herramienta (como Lex, Flex o PLY) que genere automáticamente el analizador.
+\end{enumerate}
+
+\subsection{Diagrama de estados para identificadores y números}
+
+La figura \ref{fig:state-diagram-id-number} muestra un diagrama de estados simplificado que reconoce identificadores (letras seguidas eventualmente de letras o dígitos) y números enteros.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[shorten >=1pt, node distance=3.5cm, on grid, auto, thick,
+    state/.style={circle, draw=CtpBlue, fill=CtpBase, text=CtpText, minimum size=1.2cm}]
+    
+    % Definición de estados
+    \node[state, initial, initial text={}] (start) {Start};
+    \node[state, accepting] (id) [right=of start] {id};
+    \node[state, accepting] (int) [below right=of start] {int};
+
+    % Definición de transiciones con theming semántico
+    \path[->, color=CtpText] 
+    (start) edge node {\eqdom{Letra}} (id)
+    (start) edge node[swap, yshift=-2mm] {\eqdom{Dígito}} (int)
+    (id)    edge[loop above] node {\eqdom{Letra}\eqop{/}\eqdom{Dígito}} (id)
+    (int)   edge[loop below] node {\eqdom{Dígito}} (int);
+  \end{tikzpicture}
+  \caption{Diagrama de estados para el reconocimiento de identificadores y literales enteros }
+  \label{fig:state-diagram-id-number}
+\end{figure}
+
+\subsection{Código de un scanner simple en C}
+
+El siguiente código implementa parte del diagrama anterior en C. Las funciones \texttt{addChar} y \texttt{getNonBlank} son auxiliares para construir el lexema y saltar espacios en blanco.
+
+\begin{lstlisting}[style=c, caption={Implementación parcial de un scanner en C para el reconocimiento de tokens}]
+/* Dependencias necesarias: <ctype.h> y <stdio.h> */
+
+int charClass;
+char lexeme[5];
+char nextChar;
+int lexLen;
+
+/* Definicion de clases de caracteres */
+int LETTER = 0;
+int DIGIT = 1;
+int UNKNOWN = -1;
+
+/* addChar - Agrega nextChar al lexema actual y gestiona el limite del buffer */
+void addChar() {
+    if (lexLen <= 99) {
+        lexeme[lexLen++] = nextChar;
+        lexeme[lexLen] = '\0'; /* Asegura la terminacion de la cadena */
+    } else {
+        printf("Error: Lexeme too long\n");
+    }
+}
+
+/* getNonBlank - Llama a getChar hasta obtener un caracter que no sea espacio */
+void getNonBlank() {
+    while (isspace(nextChar)) {
+        getChar();
+    }
+}
+\end{lstlisting}
+
+
+\subsection{Diagrama de estados para comentarios}
+
+La figura \ref{fig:state-diagram-comment} reconoce comentarios estilo C (que comienzan con \texttt{/*} y terminan con \texttt{*/}).
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[shorten >=1pt, node distance=3cm, on grid, auto, thick,
+    state/.style={circle, draw=CtpBlue, fill=CtpBase, text=CtpText, minimum size=1cm}]
+    
+    % Definición de estados
+    \node[state, initial, initial text={}] (q0) {$q_0$};
+    \node[state] (q1) [right=of q0] {$q_1$};
+    \node[state] (q2) [right=of q1] {$q_2$};
+    \node[state] (q3) [below=of q2] {$q_3$};
+    \node[state, accepting] (q4) [left=of q3] {$q_4$};
+
+    % Transiciones con theming semántico
+    \path[->, color=CtpText] 
+    (q0) edge node {\eqk{/}} (q1)
+    (q1) edge node {\eqk{*}} (q2)
+    (q2) edge[loop above] node {\eqdom{otro}} (q2)
+         edge[bend left] node {\eqk{*}} (q3)
+    (q3) edge[loop right] node {\eqk{*}} (q3)
+         edge[bend left] node {\eqdom{otro}} (q2)
+         edge node {\eqk{/}} (q4);
+  \end{tikzpicture}
+  \caption{Diagrama de estados para el reconocimiento de comentarios delimitados \texttt{/* ... */}}
+  \label{fig:state-diagram-comment}
+\end{figure}
+
+\subsection{Generadores de analizadores léxicos: PLY}
+
+Herramientas como PLY (Python Lex-Yacc) permiten definir tokens mediante expresiones regulares y generar automáticamente el scanner. El siguiente fragmento muestra la definición de tokens para una calculadora simple.
+
+\begin{lstlisting}[style=python, caption={Definición de tokens con PLY}]
+import ply.lex as lex
+
+tokens = ('PLUS', 'MINUS', 'TIMES', 'DIV', 'LPAREN', 'RPAREN', 'NUMBER')
+
+t_PLUS    = r'\+'
+t_MINUS   = r'-'
+t_TIMES   = r'*'
+t_DIV     = r'/'
+t_LPAREN  = r'\('
+t_RPAREN  = r'\)'
+
+def t_NUMBER(t):
+    r'[0-9]+'
+    t.value = int(t.value)
+    return t
+
+def t_newline(t):
+    r'\n+'
+    t.lexer.lineno += len(t.value)
+
+def t_error(t):
+    print("Invalid Token:", t.value[0])
+    t.lexer.skip(1)
+
+lexer = lex.lex()
+\end{lstlisting}
+
+\section{Resumen del Capítulo}
+
+En este capítulo hemos cubierto los fundamentos del análisis léxico:
+\begin{itemize}
+    \item El rol del scanner en el pipeline de compilación y su relación con la tabla de símbolos.
+    \item Las expresiones regulares como formalismo para describir patrones de tokens.
+    \item Los autómatas finitos (NFA y DFA) como modelo matemático de reconocimiento.
+    \item La construcción de Thompson (de ER a NFA) y la construcción de subconjuntos (de NFA a DFA).
+    \item La minimización de DFA para obtener el autómata más eficiente.
+    \item La implementación práctica mediante diagramas de estados, programas en C y herramientas como PLY.
+\end{itemize}
+
+Estos conceptos sientan las bases para las siguientes fases del compilador, donde la estructura sintáctica y semántica del programa será analizada en profundidad.
+
+\begin{notasbib}
+Para una exposición rigurosa de la teoría de autómatas y lenguajes regulares, véase \cite{sipser2012introduction}. Los aspectos prácticos de implementación de analizadores léxicos se tratan extensamente en \cite{aho2006compilers}. La construcción de Thompson y el algoritmo de minimización de Hopcroft se pueden consultar en dichas fuentes.
+\end{notasbib}
+
+\printbibliography[heading=subbibliography]
