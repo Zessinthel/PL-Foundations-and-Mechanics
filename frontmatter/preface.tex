@@ -1,22 +1,69 @@
-%───────────────────────────────────────────────────────────────────────────────
-% PREFACIO (texto completo)
-%───────────────────────────────────────────────────────────────────────────────
+% =============================================================================
+% PREFACIO
+% =============================================================================
+
 \chapter*{Prefacio}
 \addcontentsline{toc}{chapter}{Prefacio}
 
+% --- Cita de apertura ---
 \begin{flushright}
 \itshape
-``El aprendizaje automático es física aplicada a altas dimensiones.''
+``La teoría es relevante para la práctica. Proporciona herramientas conceptuales que los profesionales utilizan en la ingeniería computacional.''\\[4pt]
+\upshape --- Michael Sipser, \textup{Introduction to the Theory of Computation} (2013)
 \end{flushright}
 \bigskip
 
-El universo no computa con certeza. Un reactor nuclear no produce exactamente
-la misma traza de potencia dos veces...
+% --- Texto introductorio ---
+Este compendio de notas surge de la necesidad de abordar los lenguajes de programación no solo como herramientas de implementación, sino como sistemas lógicos y mecánicos que transforman la abstracción matemática en ejecución física. Para un estudiante/investigador en el área de \textbf{Computer and Information Science}, entender el diseño de un lenguaje es fundamental para diseñar y optimizar algoritmos de alta precisión. El hilo conductor de este texto es el \textit{pipeline} de traducción: desde la estructura formal de los lenguajes regulares y libres de contexto de Sipser hasta la gestión de recursos en memoria y la concurrencia moderna en Scala y Go.
 
-% ... (todo el resto del prefacio) ...
+% --- Subsección: Audiencia objetivo ---
+\subsection*{El investigador al que está dirigido este compendio}
+
+Este documento está diseñado específicamente para estudiantes que se introducen en CISE y científicos computacionales. Se asume una madurez matemática propia de la física teórica y experimental, métodos numéricos para ODEs/PDEs y computación de alto rendimiento. No se asume experiencia previa en el diseño de compiladores, pero sí una familiaridad con el diseño de algoritmos científicos en lenguajes como Fortran, Python u otro.
+
+% --- Subsección: Estructura del libro y guía de lectura ---
+\subsection*{Estructura de las notas y guía de estudio}
+
+La obra se organiza en tres arcos temáticos que conectan la teoría formal con la práctica de ingeniería:
+
+\begin{itemize}
+    \item \textbf{Capítulos 1--3: El Front-End del Compilador.} Se estudia el análisis léxico y sintáctico, utilizando la jerarquía de Chomsky como ancla teórica y el Backus-Naur Form (BNF) como herramienta de especificación.
+    \item \textbf{Capítulos 4--5: Abstracción y Gestión de Recursos.} Se profundiza en el cálculo lambda de Church y el paradigma funcional, junto con el análisis técnico del \textit{Stack} frente al \textit{Heap} y la recolección de basura.
+    \item \textbf{Capítulos 6--7: Paradigmas Modernos.} Análisis detallado de Scala y Go (Golang), enfocándose en la evaluación perezosa y la concurrencia nativa necesaria para simulaciones complejas.
+\end{itemize}
+
+% --- Subsección: Apéndices ---
+\subsection*{Los apéndices}
+
+En el \textbf{Apéndice~\ref{ap:A}} se incluyen las derivaciones detalladas de la \textit{Construcción de Thompson} y el algoritmo de \textit{Construcción de Subconjuntos} para la conversión de NFAs a DFAs, fundamentales para el análisis léxico automatizado.
+
+% --- Subsección: Contenido opcional ---
+\subsection*{La Teoría de la Computación: Guía de Sipser}
+
+A lo largo de los capítulos, se incluyen secciones tituladas ``Visión desde la Teoría de la Computación'', las cuales vinculan el contenido técnico con los teoremas de Michael Sipser. Estas secciones son autocontenidas y exploran la decidibilidad y complejidad de los lenguajes, proporcionando el rigor matemático necesario.
+
+% --- Subsección: Convenciones de estilo ---
+\subsection*{Sobre los anglicismos técnicos}
+
+En el ámbito de la ciencia de la computación, ciertos términos como \textit{Lexer}, \textit{Parser}, \textit{Stack}, \textit{Heap} y \textit{Garbage Collection} poseen definiciones estandarizadas en la literatura internacional. Para preservar la precisión técnica necesaria, estos términos se conservan en inglés o se utilizan como préstamos lingüísticos integrados.
+
+% --- Subsección: Notación ---
+\subsection*{Convenciones notacionales}
+
+\begin{itemize}
+  \item \textbf{Alfabetos y Cadenas:} Se utiliza $\Sigma$ para conjuntos de símbolos y $\epsilon$ para la cadena vacía.
+  \item \textbf{Gramáticas:} Las variables se denotan en mayúsculas (e.g., $A, B$) y los terminales en minúsculas o números.
+  \item \textbf{Análisis Asintótico:} Se emplea la notación Big-O ($O(n)$) para describir la complejidad temporal y espacial de los algoritmos de traducción.
+  \item \textbf{Cálculo Lambda:} Se sigue la sintaxis $(\lambda x.M)$ para la abstracción de funciones puras.
+\end{itemize}
+
+% --- Subsección: Sobre el título ---
+\subsection*{Sobre el título}
+
+El título \textit{``Fundamentos y Mecánica de los Lenguajes de Programación''} refleja la dualidad de nuestra disciplina: el lenguaje como una estructura matemática ideal (Fundamento) y como una máquina física de procesamiento de datos (Mecánica).
 
 \vspace{1.2cm}
 \begin{flushright}
-\textit{J.\,A. Chala-Casanova}\\[2pt]
-\the\year
+\textit{Jesús Antonio Chala Casanova}\\[2pt]
+CISE, \the\year
 \end{flushright}
