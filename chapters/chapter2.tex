@@ -595,37 +595,31 @@ La figura \ref{fig:state-diagram-comment} reconoce comentarios estilo C (que com
   \label{fig:state-diagram-comment}
 \end{figure}
 
-\subsection{Generadores de analizadores léxicos: PLY}
+\subsection{Generadores de analizadores léxicos: Lark}
 
-Herramientas como PLY (Python Lex-Yacc) permiten definir tokens mediante expresiones regulares y generar automáticamente el scanner. El siguiente fragmento muestra la definición de tokens para una calculadora simple.
+Herramientas como \textbf{Lark} \cite{lark2025} permiten definir el analizador léxico y el sintáctico de forma unificada mediante una gramática declarativa en EBNF. En Lark, los terminales (tokens) se especifican en mayúsculas mediante literales de cadena o expresiones regulares, y las directivas \texttt{\%ignore} indican qué patrones debe descartar el lexer (espacios, comentarios). El siguiente fragmento muestra la definición de tokens para una calculadora simple.
 
-\begin{lstlisting}[style=python, caption={Definición de tokens con PLY}]
-import ply.lex as lex
+\begin{lstlisting}[style=python, caption={Definición de tokens con Lark}]
+from lark import Lark
 
-tokens = ('PLUS', 'MINUS', 'TIMES', 'DIV', 'LPAREN', 'RPAREN', 'NUMBER')
+# Gramática en EBNF: los terminales van en mayúsculas
+grammar = r"""
+    PLUS:   "+"
+    MINUS:  "-"
+    TIMES:  "*"
+    DIV:    "/"
+    LPAREN: "("
+    RPAREN: ")"
+    NUMBER: /[0-9]+/
 
-t_PLUS    = r'\+'
-t_MINUS   = r'-'
-t_TIMES   = r'*'
-t_DIV     = r'/'
-t_LPAREN  = r'\('
-t_RPAREN  = r'\)'
+    %import common.WS
+    %ignore WS
+"""
 
-def t_NUMBER(t):
-    r'[0-9]+'
-    t.value = int(t.value)
-    return t
-
-def t_newline(t):
-    r'\n+'
-    t.lexer.lineno += len(t.value)
-
-def t_error(t):
-    print("Invalid Token:", t.value[0])
-    t.lexer.skip(1)
-
-lexer = lex.lex()
+parser = Lark(grammar, start='NUMBER', parser='lalr')
 \end{lstlisting}
+
+La gramática EBNF de Lark es concisa y autodocumentada: la expresión regular \texttt{/[0-9]+/} define el token \texttt{NUMBER}, mientras que los operadores se especifican como literales de cadena. La directiva \texttt{\%ignore WS} instruye al lexer para que descarte los espacios en blanco, de forma análoga a como \texttt{t\_ignore} lo hacía en PLY. Esta integración entre lexer y parser en un único archivo de gramática facilita el mantenimiento y la legibilidad, y conecta directamente con la notación EBNF estudiada en la sección 3.3.
 
 \section{Resumen del Capítulo}
 

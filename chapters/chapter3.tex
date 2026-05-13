@@ -1,0 +1,893 @@
+% =============================================================================
+% CAPÍTULO 3: ANÁLISIS SINTÁCTICO (EL PARSER)
+% =============================================================================
+
+\chapter{Análisis Sintáctico (Syntax Analysis)}
+\label{ch:syntax}
+
+El análisis sintáctico representa la segunda etapa del front‑end de un compilador. Su función principal es procesar la secuencia de tokens generada por el análisis léxico para verificar que cumplan con las reglas gramaticales del lenguaje y construir una representación jerárquica denominada árbol de parseo (\textit{parse tree}) \cite{aho2006compilers}. A diferencia del \textit{lexer}, que identifica palabras individuales, el \textit{parser} valida la estructura de las oraciones y proporciona mensajes de diagnóstico ante errores gramaticales \cite{aho2006compilers}.
+
+\section{Gramáticas Formales y Contexto Libre (CFG)}
+\label{sec:3_1_cfg}
+
+Siguiendo el formalismo de Sipser, una gramática formal es un sistema matemático que permite modelar estructuras recursivas mediante un conjunto de reglas de sustitución \cite{sipser2012introduction}.
+
+\begin{definicion}{Gramática Libre de Contexto (CFG)}
+Una gramática libre de contexto es una 4‑tupla $\eqk{G} \eqop{=} (\eqdom{T}, \eqdom{N}, \eqk{S}, \eqop{P})$ donde \cite{sipser2012introduction, aho2006compilers}:
+\begin{itemize}
+    \item $\eqdom{T}$ es el conjunto de símbolos \textbf{terminales} (tokens del alfabeto).
+    \item $\eqdom{N}$ es el conjunto de símbolos \textbf{no terminales} (variables sintácticas).
+    \item $\eqk{S} \eqop{\in} \eqdom{N}$ es el símbolo inicial o constructo principal.
+    \item $\eqop{P}$ es el conjunto de \textbf{producciones} de la forma $\equ{V} \eqop{\rightarrow} \equ{w}$, donde $\equ{V} \eqop{\in} \eqdom{N}$ y $\equ{w} \eqop{\in} (\eqdom{N} \eqop{\cup} \eqdom{T})\eqop{*}$.
+\end{itemize}
+\end{definicion}
+
+\begin{ejemplo}{Verificación de pertenencia al lenguaje}
+Sea la gramática $\eqk{G_1}$ definida por:
+\begin{align*}
+\eqk{\langle S \rangle} &\eqop{\rightarrow} \eqk{\langle A \rangle} \eqk{a} \eqk{\langle B \rangle} \eqk{b} \\
+\eqk{\langle A \rangle} &\eqop{\rightarrow} \eqk{\langle A \rangle} \eqk{b} \eqop{\mid} \eqk{b} \\
+\eqk{\langle B \rangle} &\eqop{\rightarrow} \eqk{a} \eqk{\langle B \rangle} \eqop{\mid} \eqk{a}
+\end{align*}
+Para determinar si la cadena $\eqk{bbaab}$ pertenece al lenguaje, evaluamos si existe una secuencia de reglas que la genere desde $\eqk{S}$. En este caso, la cadena es válida ya que $\eqk{\langle A \rangle}$ puede generar $\eqk{bb}$ y $\eqk{\langle B \rangle}$ puede generar $\eqk{a}$.
+\end{ejemplo}
+
+\subsection{Mecánica de Derivación}
+
+Una derivación es la secuencia de pasos que transforma el símbolo inicial en una cadena de terminales. Definimos las relaciones fundamentales según Sipser \cite{sipser2012introduction}:
+
+\begin{itemize}
+    \item \textbf{Producción Directa ($\eqop{\Rightarrow}$):} Si $\equ{A} \eqop{\rightarrow} \equ{w}$ es una regla, entonces $\equ{uAv} \eqop{\Rightarrow} \equ{uwv}$.
+    \item \textbf{Derivación ($\eqop{\Rightarrow}\eqop{*}$):} Si una cadena se obtiene tras $n$ pasos de producción.
+\end{itemize}
+
+En la práctica de compiladores, existen dos estrategias de expansión \cite{aho2006compilers}:
+\begin{enumerate}
+    \item \textbf{Leftmost Derivation:} Se expande siempre el no terminal situado más a la izquierda. Es la base de los \textbf{parsers descendentes (Top‑down)}.
+    \item \textbf{Rightmost Derivation:} Se expande siempre el no terminal situado más a la derecha. Su reverso es la base de los \textbf{parsers ascendentes (Bottom‑up)} como los de tipo LR.
+\end{enumerate}
+
+\subsection{Árboles de Parseo y Ambigüedad}
+
+El árbol de parseo abstrae el orden de las derivaciones para mostrar la estructura jerárquica del programa \cite{aho2006compilers,sipser2012introduction}.
+
+\begin{definicion}{Ambigüedad Gramatical}
+Una gramática es \textbf{ambigua} si genera dos o más árboles de parseo distintos para la misma cadena de entrada \cite{sipser2012introduction}.
+\end{definicion}
+
+\begin{observacion}{Impacto en la Semántica}
+La ambigüedad es indeseable en lenguajes de programación porque implica que una instrucción podría tener dos interpretaciones distintas (semántica ambigua), lo cual es crítico en computación científica donde la precisión de una simulación $\equ{\psi}$ es vital \cite{aho2006compilers}.
+\end{observacion}
+
+\begin{fisicaconexion}{Jerarquías estructurales y análisis multiescala}
+El árbol de parseo es análogo a la descomposición de un sistema físico complejo en niveles de energía. Así como el \textit{parser} agrupa terminales en constructos de mayor nivel ($\eqdom{N}$), el análisis multiescala en física agrupa micro‑interacciones en variables macroscópicas. La validez sintáctica asegura que las leyes de conservación estructurales se mantengan en toda la jerarquía de ejecución.
+\end{fisicaconexion}
+
+\subsection{Limitaciones: Gramáticas Regulares vs. No Regulares}
+
+Es crucial entender por qué la potencia del Capítulo 2 (Lenguajes Regulares) es insuficiente para el análisis sintáctico moderno \cite{sipser2012introduction}.
+
+\begin{ejemplo}{El lenguaje $a^n b^n$}
+Consideremos el lenguaje $\eqdom{L} \eqop{=} \eqdom{\{} \eqk{a}\eqop{^n} \eqk{b}\eqop{^n} \eqop{\mid} \equ{n} \eqop{>} \eqk{0} \eqdom{\}}$. Una gramática libre de contexto lo define como:
+\[ \eqk{\langle S \rangle} \eqop{\rightarrow} \eqk{a} \eqk{\langle S \rangle} \eqk{b} \eqop{\mid} \eqcon{\varepsilon} \]
+Este lenguaje \textbf{no es regular} porque requiere memoria para contar las $\eqk{a}$'s y compararlas con las $\eqk{b}$'s. Los autómatas finitos carecen de esta capacidad de “conteo” infinito, lo que motiva la introducción del \textbf{Autómata de Pila (PDA)} en la Jerarquía de Chomsky \cite{sipser2012introduction}.
+\end{ejemplo}
+
+\section{La Jerarquía de Chomsky}
+\label{sec:3_2_jerarquia_chomsky}
+
+Aunque el enfoque central de este capítulo son las gramáticas libres de contexto, es imperativo comprender su posición dentro del espectro formal de la computabilidad. En 1956, Noam Chomsky propuso una clasificación de las gramáticas formales basada en las restricciones impuestas a sus reglas de producción, estableciendo una jerarquía de contención donde cada nivel superior posee una capacidad de reconocimiento estrictamente mayor que el anterior \cite{sipser2012introduction, aho2006compilers}.
+
+Esta jerarquía no solo clasifica los lenguajes según su estructura matemática, sino que también define el tipo de modelo computacional (autómata) y la gestión de memoria necesaria para procesar cada clase de sintaxis.
+
+\subsection{Clasificación Formal de Lenguajes}
+\label{subsec:3_2_1_clasificacion}
+
+La jerarquía se divide en cuatro familias de lenguajes, numeradas del 0 al 3. La pertenencia de un lenguaje a una clase específica está determinada por la forma de sus reglas de producción $\equ{\alpha} \eqop{\rightarrow} \equ{\beta}$ \cite{sipser2012introduction}:
+
+\begin{enumerate}
+    \item \textbf{Tipo 0: Lenguajes Sin Restricciones (Recursivamente Enumerables):}
+    Son los lenguajes más generales. Sus producciones tienen la forma $\equ{\alpha} \eqop{\rightarrow} \equ{\beta}$, donde $\equ{\alpha} \eqop{\in} (\eqdom{N} \eqop{\cup} \eqdom{T})\eqop{^+}$ y $\equ{\beta} \eqop{\in} (\eqdom{N} \eqop{\cup} \eqdom{T})\eqop{*}$. No existen limitaciones sobre el crecimiento o la forma de las cadenas de sustitución.
+    
+    \item \textbf{Tipo 1: Lenguajes Sensibles al Contexto (CSL):}
+    Las reglas tienen la forma $\equ{\alpha} \equ{A} \equ{\beta} \eqop{\rightarrow} \equ{\alpha} \equ{\gamma} \equ{\beta}$, donde el no terminal $\equ{A}$ solo puede ser sustituido por $\equ{\gamma}$ si se encuentra rodeado por el contexto $\equ{\alpha}$ y $\equ{\beta}$. Una restricción equivalente es que $|\equ{\alpha}| \eqop{\leq} |\equ{\beta}|$, con la excepción de la producción $\eqk{S} \eqop{\rightarrow} \eqcon{\varepsilon}$ si el símbolo inicial no aparece en el lado derecho.
+    
+    \item \textbf{Tipo 2: Lenguajes Libres de Contexto (CFL):}
+    Es la clase fundamental para el diseño de compiladores. Sus reglas se definen como $\equ{A} \eqop{\rightarrow} \equ{\gamma}$, donde $\equ{A} \eqop{\in} \eqdom{N}$ es un \textbf{único símbolo no terminal}. La sustitución es independiente de los símbolos adyacentes, lo que permite la recursividad necesaria para estructuras anidadas.
+    
+    \item \textbf{Tipo 3: Lenguajes Regulares:}
+    Son los lenguajes de menor potencia, estudiados en el Capítulo 2. Sus reglas deben ser lineales por la derecha ($\equ{A} \eqop{\rightarrow} \eqk{a}\equ{B}$ o $\equ{A} \eqop{\rightarrow} \eqk{a}$) o lineales por la izquierda, permitiendo solo el reconocimiento mediante estados finitos sin memoria auxiliar.
+\end{enumerate}
+
+\begin{observacion}{Restricción de Producciones}
+Nótese que la jerarquía es inclusiva: toda gramática de \eqk{Tipo-3} es por definición de \eqk{Tipo-2}, y así sucesivamente. Sin embargo, en la práctica de la ingeniería de software, buscamos la gramática de nivel más bajo (más restringida) que sea capaz de modelar nuestro constructo, para maximizar la eficiencia del análisis \cite{aho2006compilers}.
+\end{observacion}
+
+\subsection{Mapeo entre Gramáticas y Autómatas}
+\label{subsec:3_2_2_mapeo_automatas}
+
+La utilidad práctica de la jerarquía de Chomsky radica en que cada nivel gramatical dicta los requisitos mínimos de hardware o estructuras de datos necesarios para su procesamiento. Mientras que los lenguajes regulares del Capítulo 2 operaban sobre una memoria finita (estados), los lenguajes de este capítulo requieren una memoria infinita con acceso restringido (pila) \cite{sipser2012introduction, aho2006compilers}.
+
+En la \cref{tab:chomsky-mapeo} se sistematiza esta relación, vinculando la complejidad de la gramática con la capacidad de su modelo de reconocimiento asociado.
+
+\begin{acadtable}{tab:chomsky-mapeo}{Clases de la Jerarquía de Chomsky y sus modelos computacionales asociados}
+  \begin{tabularx}{\textwidth}{L{3.5cm} X Y}
+    \toprule
+    \headerrow \thead{Tipo de Gramática} & \thead{Dominio} & \thead{Autómata Reconocedor} \\ \midrule
+    \eqk{Tipo-0} (Irrestricta) & $\eqdom{L_{RE}}$ & \eqk{Máquina de Turing (TM)} \\ \addlinespace
+    \eqk{Tipo-1} (Sensible)    & $\eqdom{L_{CS}}$ & \eqk{Autómata Linealmente Acotado (LBA)} \\ \addlinespace
+    \eqk{Tipo-2} (Libre)      & $\eqdom{L_{CF}}$ & \eqk{Autómata de Pila (PDA)} \\ \addlinespace
+    \eqk{Tipo-3} (Regular)    & $\eqdom{L_{REG}}$ & \eqk{Autómata Finito (FSA)} \\ \bottomrule
+  \end{tabularx}
+\end{acadtable}
+
+Esta jerarquía revela por qué los lenguajes de programación modernos residen en el nivel de \eqk{Tipo-2}. Los lenguajes regulares (\eqk{Tipo-3}) son extremadamente eficientes, permitiendo el reconocimiento en tiempo lineal mediante \eqk{FSA}, pero carecen de la expresividad necesaria para manejar estructuras anidadas o recursivas \cite{sipser2012introduction, aho2006compilers}. 
+
+Por otro lado, los lenguajes de \eqk{Tipo-2} proporcionan el equilibrio ideal: son suficientemente potentes para definir la sintaxis de lenguajes complejos mediante un \eqk{PDA} y mantienen una complejidad algorítmica manejable, típicamente $\eqop{O}(\equ{n}\eqop{^3})$ en el peor de los casos para gramáticas generales, y lineal para gramáticas deterministas utilizadas en compiladores reales \cite{aho2006compilers, sipser2012introduction}.
+
+\begin{observacion}{La Pila como Memoria Estructural}
+La diferencia clave entre un \eqk{FSA} y un \eqk{PDA} es la presencia de la \textbf{pila} (\textit{stack}). Esta estructura permite al \textit{parser} «recordar» constructos abiertos (como un paréntesis o una llave de inicio) mientras procesa el contenido interno, garantizando que el cierre coincida con la apertura en estructuras de profundidad arbitraria.
+\end{observacion}
+
+\subsection{Representación Gráfica de la Jerarquía}
+\label{subsec:3_2_3_grafica}
+
+La relación de contención entre las distintas familias de lenguajes se visualiza de manera efectiva mediante un diagrama de conjuntos anidados. Esta representación geométrica ilustra que cada nivel de la jerarquía es un subconjunto estricto de la clase superior, evidenciando que un incremento en la libertad de las reglas de producción expande el dominio de cadenas reconocibles \cite{sipser2012introduction, aho2006compilers}.
+
+Como se observa en la \cref{fig:chomsky-hierarchy}, los lenguajes regulares del Capítulo 2 constituyen el núcleo más restringido, contenidos íntegramente dentro del dominio de los lenguajes libres de contexto que fundamentan el diseño de parsers modernos.
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[thick, font=\small]
+    % Estilos de los círculos con la paleta Catppuccin
+    \tikzset{
+      set_node/.style={circle, draw=CtpText, fill=#1!15, line width=0.4mm}
+    }
+
+    % Círculos concéntricos de afuera hacia adentro
+    \node[set_node=CtpMauve,    minimum size=7.5cm, label={[yshift=-1.1cm]above:\eqk{Tipo-0}: $\eqdom{L_{RE}}$}] (T0) {};
+    \node[set_node=CtpGreen,    minimum size=5.8cm, label={[yshift=-1.1cm]above:\eqk{Tipo-1}: $\eqdom{L_{CS}}$}] (T1) {};
+    \node[set_node=CtpBlue,     minimum size=4.1cm, label={[yshift=-1.1cm]above:\eqk{Tipo-2}: $\eqdom{L_{CF}}$}] (T2) {};
+    \node[set_node=CtpSapphire, minimum size=2.4cm, label={[yshift=-1.4cm]above:\eqk{Tipo-3}: $\eqdom{L_{REG}}$}] (T3) {};
+    
+  \end{tikzpicture}
+  \caption{Jerarquía de Chomsky: Relación de contención de los dominios de lenguajes y sus niveles de restricción \cite{sipser2012introduction, aho2006compilers}.}
+  \label{fig:chomsky-hierarchy}
+\end{figure}
+
+\subsection{Justificación y Pragmatismo en Compiladores}
+\label{subsec:3_2_4_justificacion}
+
+La elección de las gramáticas de \eqk{Tipo-2} (CFG) como el núcleo del análisis sintáctico no es arbitraria, sino el resultado de un compromiso técnico entre la expresividad necesaria para los lenguajes de programación y la viabilidad de su implementación algorítmica.
+
+Como se ha explorado, los lenguajes de \eqk{Tipo-3} (Regulares) son insuficientes para modelar constructos fundamentales como el anidamiento de paréntesis, bloques de código balanceados o estructuras recursivas (ej. el lenguaje $\eqdom{\{}\eqk{a}\eqop{^n}\eqk{b}\eqop{^n}\eqop{\mid}\equ{n}\eqop{>}\eqk{0}\eqdom{\}}$), debido a su incapacidad de mantener un conteo de profundidad arbitraria \cite{sipser2012introduction, aho2006compilers}. Por el contrario, los lenguajes de \eqk{Tipo-0} y \eqk{Tipo-1} poseen una potencia de cómputo excesiva que deriva en una ineficiencia inaceptable para un compilador moderno, ya que sus algoritmos de reconocimiento son extremadamente complejos o, en el caso del \eqk{Tipo-0}, indecidibles \cite{aho2006compilers, sipser2012introduction}.
+
+\begin{observacion}{El equilibrio de las CFG}
+Las gramáticas de \eqk{Tipo-2} ocupan el «punto dulce» de la computabilidad para el diseño de lenguajes. Proporcionan la estructura jerárquica necesaria (árboles de parseo) para representar la lógica de un programa y permiten algoritmos de reconocimiento generales con una complejidad de peor caso de $\eqop{O}(\equ{n}\eqop{^3})$ \cite{aho2006compilers}.
+\end{observacion}
+
+En la práctica profesional, el pragmatismo dicta el uso de subconjuntos deterministas de las CFG (como las gramáticas \eqk{LL} y \eqk{LR}). Estos subconjuntos permiten que los parsers operen en **tiempo lineal** ($\eqop{O}(\equ{n})$), lo cual es vital para procesar archivos de código fuente con miles de líneas de manera instantánea \cite{aho2006compilers}. No obstante, es importante señalar que incluso las CFG tienen límites; por ejemplo, no pueden verificar que una variable haya sido declarada antes de su uso (una característica sensible al contexto). Esta limitación justifica la existencia del **Análisis Semántico**, etapa posterior donde se resuelven estas dependencias mediante tablas de símbolos y gramáticas de atributos \cite{aho2006compilers}.
+
+\section{Formas de Notación: BNF y EBNF}
+\label{sec:3_3_notacion_bnf}
+
+Para documentar y comunicar las gramáticas libres de contexto de forma estandarizada, se emplean metalenguajes específicos que abstraen la estructura matemática de las producciones. El estándar más influyente en la computación es la \textbf{Backus-Naur Form (BNF)}, desarrollada originalmente por John Backus y Peter Naur para la especificación formal del lenguaje \eqk{ALGOL 60} \cite{aho2006compilers,sipser2012introduction}. Estas notaciones permiten definir con precisión la jerarquía de un lenguaje, facilitando tanto la comprensión humana como la implementación automática de parsers mediante herramientas generadoras \cite{aho2006compilers}.
+
+\subsection{La Notación de Backus-Naur (BNF)}
+\label{subsec:3_3_1_bnf}
+
+La notación BNF es un sistema de reglas de sustitución equivalente a las gramáticas de \eqk{Tipo-2} de la jerarquía de Chomsky \cite{sipser2012introduction}. En este metalenguaje, se distinguen claramente los constructos definidos por el programador de los símbolos básicos del alfabeto.
+
+\begin{definicion}{Notación de Backus-Naur (BNF)}
+Una gramática en BNF se compone de un conjunto de reglas de producción donde \cite{aho2006compilers,sipser2012introduction}:
+\begin{itemize}
+    \item Los \textbf{símbolos no terminales} (constructos) se representan encerrados entre paréntesis angulares: $\eqk{\langle} \equ{variable} \eqk{\rangle}$.
+    \item El símbolo de definición o derivación se denota mediante una flecha $\eqop{\rightarrow}$ (o el operador $\eqop{::=}$).
+    \item Las diversas alternativas para un mismo constructo se separan mediante el operador de barra vertical $\eqop{\mid}$.
+\end{itemize}
+\end{definicion}
+
+La recursividad es la herramienta fundamental en BNF para describir estructuras de longitud arbitraria, como listas de parámetros o bloques de sentencias anidados \cite{aho2006compilers}.
+
+\begin{ejemplo}{Definición de listas y sentencias en BNF}
+Consideremos la definición de una sentencia ($\equ{stmt}$) y una lista de identificadores ($\equ{ident\_list}$) siguiendo el estándar BNF \cite{aho2006compilers}:
+\begin{align*}
+\eqk{\langle} \equ{stmt} \eqk{\rangle} &\eqop{\rightarrow} \eqk{\langle} \equ{single\_stmt} \eqk{\rangle} \eqop{\mid} \eqk{begin} \eqk{\langle} \equ{stmt\_list} \eqk{\rangle} \eqk{end} \\
+\eqk{\langle} \equ{ident\_list} \eqk{\rangle} &\eqop{\rightarrow} \eqk{ident} \eqop{\mid} \eqk{ident, } \eqk{\langle} \equ{ident\_list} \eqk{\rangle}
+\end{align*}
+En este ejemplo, $\eqk{begin}$, $\eqk{end}$, $\eqk{ident}$ y la coma ($\eqk{,}$) actúan como símbolos terminales (tokens), mientras que los elementos entre $\eqk{\langle} \dots \eqk{\rangle}$ son las variables que el parser debe expandir recursivamente.
+\end{ejemplo}
+
+\subsection{BNF Extendido (EBNF)}
+\label{subsec:3_3_2_ebnf}
+
+Aunque el estándar BNF es suficiente para describir cualquier gramática libre de contexto, en la práctica resulta verboso para estructuras comunes como listas o parámetros opcionales. El \textbf{BNF Extendido (EBNF)} introduce operadores que permiten representaciones más compactas y legibles, facilitando la implementación de parsers manuales o generadores automáticos \cite{aho2006compilers}.
+
+\begin{definicion}{EBNF (Extended BNF)}
+EBNF extiende la capacidad descriptiva del metalenguaje mediante tres operadores fundamentales \cite{aho2006compilers,sipser2012introduction}:
+\begin{itemize}
+    \item \textbf{Opcionalidad:} Las partes de la regla encerradas entre corchetes $\eqop{[} \dots \eqop{]}$ pueden aparecer una vez o ninguna.
+    \item \textbf{Repetición:} Las partes encerradas entre llaves $\eqop{\{} \dots \eqop{\}}$ pueden repetirse cero o más veces (clausura de Kleene).
+    \item \textbf{Agrupación:} Se utilizan paréntesis $\eqop{(} \dots \eqop{)}$ para agrupar alternativas separadas por barras $\eqop{\mid}$ dentro de una producción.
+\end{itemize}
+\end{definicion}
+
+La principal ventaja de EBNF es que permite transformar reglas recursivas complejas en una notación iterativa que se traduce directamente a estructuras de control como el \texttt{while} en un parser descendente \cite{aho2006compilers}.
+
+\begin{ejemplo}{Simplificación de gramáticas mediante EBNF}
+Comparemos la definición de una lista de identificadores y una llamada a procedimiento entre BNF puro y EBNF \cite{aho2006compilers}:
+
+\textbf{Notación BNF (Recursiva):}
+\begin{align*}
+\eqk{\langle} \equ{ident\_list} \eqk{\rangle} &\eqop{\rightarrow} \eqk{id} \eqop{\mid} \eqk{id, } \eqk{\langle} \equ{ident\_list} \eqk{\rangle} \\
+\eqk{\langle} \equ{proc\_call} \eqk{\rangle} &\eqop{\rightarrow} \eqk{id()} \eqop{\mid} \eqk{id(} \eqk{\langle} \equ{expr\_list} \eqk{\rangle} \eqk{)}
+\end{align*}
+
+\textbf{Notación EBNF (Iterativa/Opcional):}
+\begin{align*}
+\eqk{\langle} \equ{ident\_list} \eqk{\rangle} &\eqop{\rightarrow} \eqk{id} \eqdom{\{} \eqk{, id} \eqdom{\}} \\
+\eqk{\langle} \equ{proc\_call} \eqk{\rangle} &\eqop{\rightarrow} \eqk{id} \eqop{(} \eqdom{[} \eqk{\langle} \equ{expr\_list} \eqk{\rangle} \eqdom{]} \eqop{)}
+\end{align*}
+Observe cómo el uso de $\eqdom{\{ } \dots \eqdom{\} }$ elimina la necesidad de recursividad explícita para la lista, y $\eqdom{[ } \dots \eqdom{ ]}$ permite una definición única para llamadas con o sin argumentos \cite{aho2006compilers}.
+\end{ejemplo}
+
+\begin{observacion}{Eficiencia en el diseño}
+El uso de EBNF es ideal para el diseño de lenguajes modernos porque minimiza la cantidad de subprogramas necesarios en un parser de descenso recursivo, ya que cada operador de repetición se convierte en un bucle simple en lugar de múltiples llamadas a funciones \cite{aho2006compilers}.
+\end{observacion}
+
+\subsection{Equivalencia y Recursividad}
+\label{subsec:3_3_3_equivalencia}
+
+Es fundamental reconocer que el estándar EBNF no incrementa la potencia generativa de las gramáticas de \eqk{Tipo-2}; por el contrario, actúa como un azúcar sintáctico (\textit{syntactic sugar}) que facilita la escritura de reglas que, en BNF puro, requieren el uso extensivo de la recursividad \cite{sipser2012introduction,aho2006compilers}. 
+
+Toda construcción en EBNF puede ser traducida sistemáticamente a una serie de producciones equivalentes en BNF siguiendo transformaciones algebraicas sobre los conjuntos de reglas \cite{sipser2012introduction}:
+
+\begin{enumerate}
+    \item \textbf{Transformación de Opcionalidad:} Una regla EBNF del tipo $\equ{A} \eqop{\rightarrow} \eqdom{[} \equ{B} \eqdom{]}$ equivale en BNF a introducir una bifurcación hacia la cadena vacía:
+    \[ \equ{A} \eqop{\rightarrow} \equ{B} \eqop{\mid} \eqcon{\varepsilon} \]
+    
+    \item \textbf{Transformación de Repetición:} Una clausura de Kleene EBNF $\equ{A} \eqop{\rightarrow} \eqdom{\{} \equ{B} \eqdom{\}}$ se traduce a BNF mediante una regla recursiva (típicamente a la derecha o izquierda):
+    \[ \equ{A} \eqop{\rightarrow} \equ{B}\equ{A} \eqop{\mid} \eqcon{\varepsilon} \]
+\end{enumerate}
+
+\begin{ejemplo}{Mapeo de listas recursivas}
+Consideremos la descripción de una lista de parámetros. Mientras que EBNF permite una definición lineal, BNF debe gestionar la recursividad para que el autómata de pila pueda «apilar» los elementos encontrados \cite{aho2006compilers}.
+
+\textbf{Definición en EBNF (Iterativa):}
+\[ \eqk{\langle} \equ{params} \eqk{\rangle} \eqop{\rightarrow} \equ{id} \eqdom{\{} \eqk{, } \equ{id} \eqdom{\}} \]
+
+\textbf{Definición en BNF (Recursiva):}
+\begin{align*}
+\eqk{\langle} \equ{params} \eqk{\rangle} &\eqop{\rightarrow} \equ{id} \eqop{\mid} \equ{id} \eqk{, } \eqk{\langle} \equ{params} \eqk{\rangle}
+\end{align*}
+\end{ejemplo}
+
+\begin{fisicaconexion}{Recursividad y fractales en sistemas dinámicos}
+La recursividad en las gramáticas BNF es análoga a la auto-similitud observada en los sistemas físicos fractales. Así como un constructo gramatical se define en términos de sí mismo para generar estructuras de profundidad arbitraria, los modelos de turbulencia en fluidos utilizan cascadas de energía donde las estructuras de gran escala derivan en remolinos microscópicos mediante leyes de potencia recursivas. En ambos casos, una regla simple genera una complejidad estructural infinita bajo los límites de conservación del sistema.
+\end{fisicaconexion}
+
+\subsection{Aplicación en Especificaciones Modernas}
+\label{subsec:3_3_4_especificaciones}
+
+La relevancia de las notaciones BNF y EBNF trasciende el ámbito académico, constituyendo el lenguaje técnico mediante el cual se definen los estándares industriales. Lenguajes como \eqk{Java}, \eqk{Python} y \eqk{C++} utilizan estas gramáticas en sus documentos de especificación para garantizar que tanto los desarrolladores de compiladores como los programadores tengan una comprensión unívoca de la sintaxis del lenguaje \cite{aho2006compilers}.
+
+Un ejemplo destacado se encuentra en la definición de los tipos de datos en la Java Language Specification (\textit{JLS}), donde se utiliza una jerarquía de producciones para clasificar los literales y tipos primitivos \cite{aho2006compilers}.
+
+\begin{ejemplo}{Especificación de tipos en Java}
+A continuación se presenta un fragmento simplificado de la gramática de tipos de \eqk{Java} utilizando una variante de la notación BNF \cite{aho2006compilers}:
+
+\begin{align*}
+\eqk{\langle} \equ{PrimitiveType} \eqk{\rangle} &\eqop{\rightarrow} \eqk{\langle} \equ{NumericType} \eqk{\rangle} \eqop{\mid} \eqk{boolean} \\
+\eqk{\langle} \equ{NumericType} \eqk{\rangle} &\eqop{\rightarrow} \eqk{\langle} \equ{IntegralType} \eqk{\rangle} \eqop{\mid} \eqk{\langle} \equ{FloatingPointType} \eqk{\rangle} \\
+\eqk{\langle} \equ{IntegralType} \eqk{\rangle} &\eqop{\rightarrow} \eqk{byte} \eqop{\mid} \eqk{short} \eqop{\mid} \eqk{int} \eqop{\mid} \eqk{long} \eqop{\mid} \eqk{char} \\
+\eqk{\langle} \equ{FloatingPointType} \eqk{\rangle} &\eqop{\rightarrow} \eqk{float} \eqop{\mid} \eqk{double}
+\end{align*}
+
+Esta estructura jerárquica permite al \textit{parser} clasificar un token como \eqk{int} dentro del dominio de los \equ{IntegralType}, y este a su vez dentro de los \equ{NumericType}, facilitando la posterior verificación de tipos en el análisis semántico.
+\end{ejemplo}
+
+\begin{observacion}{El estándar industrial}
+Aunque cada lenguaje puede introducir variaciones estéticas en su notación (como el uso de negritas para terminales o ':' en lugar de '$\eqop{\rightarrow}$'), la lógica subyacente sigue siendo la de una Gramática Libre de Contexto (\eqk{Tipo-2}). Esta uniformidad permite que herramientas generadoras de código analicen estas especificaciones y produzcan automáticamente los componentes del \textit{front-end} \cite{aho2006compilers}.
+\end{observacion}
+
+\section{El Problema del Análisis Sintáctico (Parsing)}
+\label{sec:3_4_parsing}
+
+El análisis sintáctico constituye el núcleo del \textit{front-end} de un compilador, actuando como el puente que transforma una secuencia lineal de tokens en una estructura jerárquica que representa la lógica interna del código fuente \cite{aho2006compilers}. Matemáticamente, resolver el problema del \textit{parsing} implica encontrar una secuencia de derivación válida desde el símbolo inicial $\eqk{S}$ hasta la cadena de terminales proporcionada por el \textit{lexer} \cite{sipser2012introduction}.
+
+\subsection{Objetivos y Responsabilidades del Parser}
+\label{subsec:3_4_1_objetivos}
+
+El \textit{parser} no es únicamente un validador de sintaxis; sus responsabilidades son críticas para las fases posteriores de optimización y generación de código intermedio \cite{aho2006compilers}. Sus objetivos principales se resumen en tres pilares fundamentales:
+
+\begin{enumerate}
+    \item \textbf{Verificación Gramatical:} Determinar de manera inequívoca si el flujo de entrada cumple con las leyes de formación definidas por la gramática libre de contexto $\eqk{G}$ \cite{sipser2012introduction, aho2006compilers}.
+    \item \textbf{Generación de Estructuras:} Construir una representación explícita de la derivación, típicamente un \textbf{árbol de parseo} (árbol sintáctico concreto) o, de forma más común en compiladores modernos, un \textbf{Árbol Sintáctico Abstracto (AST)} que abstrae los detalles puramente gramaticales para centrarse en la semántica \cite{aho2006compilers}.
+    \item \textbf{Gestión de Errores y Diagnóstico:} Identificar la ubicación exacta de una transgresión gramatical y proporcionar mensajes de diagnóstico que permitan al programador corregir el código. Un \textit{parser} robusto debe, además, ser capaz de recuperarse de errores locales para continuar analizando el resto de la entrada \cite{aho2006compilers}.
+\end{enumerate}
+
+\begin{definicion}{El Problema del Reconocimiento}
+Dado un lenguaje $\eqdom{L}(\eqk{G})$ y una cadena de entrada $\equ{w}$, el problema del análisis sintáctico consiste en decidir si $\equ{w} \eqop{\in} \eqdom{L}(\eqk{G})$ y, en caso afirmativo, reconstruir el camino de derivaciones $\eqk{S} \eqop{\Rightarrow}\eqop{*} \equ{w}$ que justifica su pertenencia \cite{sipser2012introduction}.
+\end{definicion}
+
+\begin{fisicaconexion}{Análisis estructural en la mecánica de medios continuos}
+En física computacional, el \textit{parsing} tiene un análogo directo en la discretización de dominios para simulación. Así como el \textit{parser} organiza tokens en una jerarquía sintáctica, los solvers de elementos finitos organizan las coordenadas del dominio $\eqdom{\Omega}$ en una malla de conectividad jerárquica. La validez de la malla (ausencia de elementos degenerados) es el requisito «sintáctico» necesario para que las ecuaciones de balance de energía tengan un significado físico interpretable.
+\end{fisicaconexion}
+
+\subsection{Taxonomía: Parsing Descendente vs. Ascendente}
+\label{subsec:3_4_2_taxonomia}
+
+Existen dos enfoques algorítmicos fundamentales para resolver el problema del análisis sintáctico, los cuales se diferencian por la dirección en la que construyen el árbol de parseo y el orden en que aplican las reglas de producción \cite{aho2006compilers}.
+
+\begin{definicion}{Estrategias de Parsing}
+La clasificación del \textit{parsing} se divide en:
+\begin{itemize}
+    \item \textbf{Análisis Descendente (Top-Down):} El proceso comienza en la raíz del árbol con el símbolo inicial $\eqk{S}$ y busca expandir los no terminales hasta que las hojas coincidan con la cadena de tokens $\equ{w}$. Este enfoque construye el árbol en \textbf{preorden} y sigue una \textbf{derivación por la izquierda} (\textit{leftmost derivation}).
+    \item \textbf{Análisis Ascendente (Bottom-Up):} El proceso se inicia en las hojas del árbol (los tokens de la entrada) y busca realizar una serie de reducciones progresivas hasta converger en el símbolo inicial $\eqk{S}$. Este enfoque reconstruye el \textbf{reverso de una derivación por la derecha} (\textit{rightmost derivation}).
+\end{itemize}
+\end{definicion}
+
+En la práctica, los \textit{parsers} descendentes suelen ser más sencillos de implementar manualmente (mediante funciones recursivas), mientras que los ascendentes son generalmente más potentes y eficientes para gramáticas complejas, aunque requieren de herramientas automáticas para generar sus tablas de decisión \cite{aho2006compilers}.
+
+\begin{observacion}{Eficiencia en la búsqueda}
+Mientras que un algoritmo descendente se pregunta «¿Cómo puedo expandir este constructo para generar la entrada?», un algoritmo ascendente evalúa «¿Qué regla de la gramática permite reducir esta secuencia de tokens hacia un constructo de mayor nivel?». Esta última estrategia permite al \textit{parser} manejar gramáticas con recursividad a la izquierda, que suelen causar bucles infinitos en implementaciones descendentes simples \cite{aho2006compilers}.
+\end{observacion}
+
+\begin{fisicaconexion}{Aproximaciones de granularidad en modelos físicos}
+Esta taxonomía es análoga a los enfoques de modelado en física. El parsing \textbf{descendente} se asemeja al enfoque \textit{Top-Down} de la física teórica, donde partimos de principios fundamentales ($\eqk{S}$) para derivar comportamientos en escalas menores ($\equ{w}$). Por el contrario, el parsing \textbf{ascendente} emula el modelado multiescala basado en datos, donde micro-observaciones individuales ($\equ{w}$) se agregan y reducen sistemáticamente para reconstruir las leyes globales del sistema ($\eqk{S}$).
+\end{fisicaconexion}
+
+\subsection{La Familia de Parsers \eqk{LL} y \eqk{LR}}
+\label{subsec:3_4_3_familia_parsers}
+
+La nomenclatura estándar de los algoritmos de análisis sintáctico describe tanto la dirección en la que se procesa la entrada como el tipo de derivación que el algoritmo intenta reconstruir \cite{aho2006compilers}.
+
+\begin{definicion}{Parsers \eqk{LL} y \eqk{LR}}
+Las siglas que definen a estas familias de parsers se desglosan de la siguiente manera:
+\begin{itemize}
+    \item \textbf{\eqk{LL} (\textit{Left-to-right, Leftmost derivation}):} El parser escanea la entrada de izquierda a derecha y construye una \textbf{derivación por la izquierda}. Estos parsers pertenecen a la categoría \textit{top-down} y suelen denominarse parsers predictivos \cite{aho2006compilers}.
+    \item \textbf{\eqk{LR} (\textit{Left-to-right, Rightmost derivation}):} El parser escanea la entrada de izquierda a derecha, pero construye el reverso de una \textbf{derivación por la derecha}. Estos parsers operan bajo el enfoque \textit{bottom-up} y son capaces de reconocer un conjunto más amplio de gramáticas que los \eqk{LL} \cite{aho2006compilers}.
+\end{itemize}
+\end{definicion}
+
+\subsection*{El parámetro \eqop{k} (\textit{Lookahead})}
+
+Tanto en la familia \eqk{LL} como en la \eqk{LR}, se añade frecuentemente un parámetro $\eqop{k}$ entre paréntesis, denotado como $\eqk{LL}(\eqop{k})$ o $\eqk{LR}(\eqop{k})$. Este parámetro indica el número de tokens de «ojeada» o \textit{lookahead} que el parser utiliza para decidir qué regla de producción aplicar sin ambigüedad \cite{aho2006compilers}.
+
+\begin{itemize}
+    \item \textbf{\eqk{LL}(\eqop{1}):} Es el parser descendente más simple. Utiliza un único token de ojeada ($\equ{lookahead}$) para seleccionar la rama correcta del árbol. Aunque es eficiente y fácil de implementar mediante descenso recursivo, no puede reconocer todas las gramáticas libres de contexto, especialmente aquellas con recursividad a la izquierda \cite{aho2006compilers}.
+    \item \textbf{\eqk{LR}(\eqop{1}):} Es el estándar en generadores automáticos como **Yacc** o **Bison**. Utiliza tablas de decisión (\textit{Action/Goto}) y un token de ojeada para realizar acciones de desplazamiento (\textit{shift}) o reducción (\textit{reduce}) \cite{aho2006compilers}.
+\end{itemize}
+
+\begin{observacion}{Potencia y Determinismo}
+Un parser es \textbf{determinista} si para cualquier configuración dada y símbolo de entrada, existe exactamente una acción posible \cite{sipser2012introduction}. Mientras que las gramáticas regulares (Capítulo 2) siempre tienen un autómata finito determinista equivalente, las gramáticas libres de contexto solo son deterministas si son no ambiguas y se ajustan a las restricciones de las familias $\eqk{LL}(\eqop{k})$ o $\eqk{LR}(\eqop{k})$ \cite{aho2006compilers}.
+\end{observacion}
+
+\subsection{Eficiencia y Complejidad del Parsing}
+\label{subsec:3_4_4_eficiencia}
+
+El análisis de la complejidad temporal es un factor determinante en la elección de un algoritmo de \textit{parsing} para lenguajes de programación. Aunque todas las gramáticas libres de contexto pertenecen a la clase de complejidad \eqk{P} \cite{sipser2012introduction}, existe una diferencia significativa entre el límite teórico general y la eficiencia práctica requerida por un compilador.
+
+\begin{enumerate}
+    \item \textbf{Complejidad General ($O(\equ{n}\eqop{^3})$):} Para una gramática libre de contexto arbitraria, algoritmos de programación dinámica como el de \textit{Cocke-Younger-Kasami} (CYK) pueden determinar la pertenencia de una cadena en un tiempo de peor caso de $\eqop{O}(\equ{n}\eqop{^3})$, donde $\equ{n}$ es la longitud de la cadena de entrada \cite{sipser2012introduction}.
+    \item \textbf{Complejidad Determinista ($O(\equ{n})$):} En la construcción de compiladores reales, un costo cúbico es inaceptable para procesar archivos con miles de líneas de código. Por ello, se restringe el diseño del lenguaje a gramáticas deterministas que puedan ser procesadas por las familias \eqk{LL} o \eqk{LR}, las cuales garantizan un tiempo de ejecución \textbf{lineal} $\eqop{O}(\equ{n})$ \cite{aho2006compilers}.
+\end{enumerate}
+
+\begin{observacion}{Escalabilidad y CISE}
+Desde la perspectiva de la computación científica e ingeniería (CISE), la eficiencia lineal $\eqop{O}(\equ{n})$ es crítica. Al desarrollar lenguajes de dominio específico (DSL) para simulaciones físicas complejas, el \textit{parser} debe ser capaz de procesar descripciones de mallas o configuraciones masivas sin convertirse en un cuello de botella para el ciclo de ejecución.
+\end{observacion}
+
+\begin{acadtable}{tab:complejidad-parsing}{Comparativa de complejidad temporal en algoritmos de parsing}
+  \begin{tabularx}{\textwidth}{L{4cm} X Y}
+    \toprule
+    \headerrow \thead{Algoritmo / Familia} & \thead{Complejidad} & \thead{Determinismo} \\ \midrule
+    CYK (General CFG) & $\eqop{O}(\equ{n}\eqop{^3})$ & No determinista \\ \addlinespace
+    \eqk{LL}(\eqop{k}) (Top-down) & $\eqop{O}(\equ{n})$ & Determinista \\ \addlinespace
+    \eqk{LR}(\eqop{k}) (Bottom-up) & $\eqop{O}(\equ{n})$ & Determinista \\ \bottomrule
+  \end{tabularx}
+\end{acadtable}
+
+\section{Análisis Sintáctico Descendente (Top-down Parsing)}
+\label{sec:3_5_top_down}
+
+El análisis sintáctico descendente es una estrategia de búsqueda que intenta reconstruir la derivación de una cadena partiendo desde el símbolo inicial $\eqk{S}$ (la raíz del árbol) hasta alcanzar los tokens terminales de la entrada (las hojas) \cite{aho2006compilers}. Este enfoque se caracteriza por ser \textbf{predictivo}: en cada paso, el parser debe decidir qué regla de producción aplicar basándose en el constructo actual y en la inspección de los símbolos que están por venir en el flujo de entrada \cite{aho2006compilers}.
+
+Desde una perspectiva algorítmica, esta técnica corresponde a una \textbf{derivación por la izquierda} (\textit{leftmost derivation}), donde el no terminal situado más a la izquierda en la cadena sentencial es siempre el primero en ser expandido \cite{aho2006compilers,sipser2012introduction}.
+
+\subsection{Conceptos del Parsing Predictivo}
+\label{subsec:3_5_1_conceptos_predictivo}
+
+La familia principal de algoritmos en esta categoría se denomina $\eqk{LL}(\eqop{k})$. El nombre describe de manera compacta el funcionamiento del motor de inferencia del compilador \cite{aho2006compilers}:
+
+\begin{definicion}{La familia $\eqk{LL}(\eqop{k})$}
+Un parser se clasifica como $\eqk{LL}(\eqop{k})$ si cumple con las siguientes propiedades \cite{aho2006compilers}:
+\begin{itemize}
+    \item \textbf{L (\textit{Left-to-right scanning}):} La entrada se procesa de izquierda a derecha.
+    \item \textbf{L (\textit{Leftmost derivation}):} Se construye una derivación por la izquierda.
+    \item \textbf{\eqop{k} (\textit{Lookahead}):} Se utilizan $\eqop{k}$ símbolos de «ojeada» o anticipación para seleccionar la producción correcta de forma determinista.
+\end{itemize}
+\end{definicion}
+
+El valor de $\eqop{k}$ representa la potencia del parser. El caso más simple y común en la práctica manual es el $\eqk{LL}(\eqop{1})$, el cual toma decisiones basándose únicamente en el token actual ($\equ{nextToken}$) \cite{aho2006compilers}. Aunque los parsers $\eqk{LL}(\eqop{1})$ son altamente eficientes (operan en tiempo $\eqop{O}(\equ{n})$), presentan restricciones importantes: no pueden procesar todas las gramáticas libres de contexto, siendo especialmente vulnerables a la recursividad a la izquierda y a la ambigüedad en los prefijos comunes de las reglas \cite{aho2006compilers,sipser2012introduction}.
+
+\begin{observacion}{El rol del Lookahead}
+El símbolo de \textit{lookahead} actúa como una «ventana» al futuro de la computación. Si para un no terminal $\equ{A}$ existen producciones $\equ{A} \eqop{\rightarrow} \equ{\alpha} \eqop{\mid} \equ{\beta}$, el parser predictivo consulta el \textit{lookahead} para determinar cuál de las dos ramas seguir sin necesidad de realizar un rastreo con retroceso (\textit{backtracking}), manteniendo así la eficiencia lineal del proceso \cite{aho2006compilers}.
+\end{observacion}
+
+\begin{fisicaconexion}{Causalidad y condiciones iniciales}
+El parsing descendente es análogo a la resolución de problemas de valores iniciales en física clásica. Partimos de un estado global del sistema (el símbolo inicial $\eqk{S}$) y, mediante leyes de evolución (producciones), derivamos los estados microscópicos finales (tokens $\equ{w}$). El éxito de la «predicción» del parser depende de que el estado actual y una pequeña información del entorno cercano (\textit{lookahead}) sean suficientes para determinar el camino evolutivo único de la estructura sintáctica.
+\end{fisicaconexion}
+
+\subsection{Parsing de Descenso Recursivo (Recursive-Descent)}
+\label{subsec:3_5_2_recursive_descent}
+
+El análisis de descenso recursivo es una implementación manual de un \textit{parser top-down} donde cada símbolo no terminal de la gramática se traduce directamente en un subprograma (función o procedimiento) dentro del código del compilador \cite{aho2006compilers}. Esta técnica es altamente intuitiva debido a que la estructura del código resultante es un reflejo casi exacto de la estructura jerárquica de la gramática.
+
+\begin{definicion}{Mapeo Gramática-Código}
+En un \textit{parser} de descenso recursivo, el proceso de traducción de reglas de producción sigue un conjunto de convenciones lógicas basadas en la notación \eqk{EBNF} \cite{aho2006compilers}:
+\begin{itemize}
+    \item \textbf{No Terminales ($\eqdom{N}$):} Cada constructo $\equ{A} \eqop{\in} \eqdom{N}$ se convierte en una función \texttt{A()}.
+    \item \textbf{Terminales ($\eqdom{T}$):} Cada símbolo $\eqk{a} \eqop{\in} \eqdom{T}$ se valida mediante una función de coincidencia (\textit{match}) que compara el \texttt{nextToken} con el símbolo esperado.
+    \item \textbf{Alternativas ($\eqop{\mid}$):} Se implementan mediante estructuras condicionales (\texttt{if} o \texttt{switch}), utilizando el \textit{lookahead} para seleccionar la rama correcta.
+    \item \textbf{Repeticiones ($\eqdom{\{\dots\}}$):} Se transforman en bucles \texttt{while} que consumen tokens mientras la condición de permanencia sea válida.
+\end{itemize}
+\end{definicion}
+
+La eficiencia de este método radica en el uso de la \textbf{notación EBNF}, la cual está idealmente diseñada para ser la base de un \textit{parser} de descenso recursivo al minimizar el número de no terminales y permitir el uso de lógica iterativa en lugar de recursión pura para las listas \cite{aho2006compilers}.
+
+\begin{observacion}{Selección de producciones y Lookahead}
+Cuando un no terminal posee múltiples lados derechos (RHS), el subprograma debe decidir qué ruta tomar. El \textit{parser} consulta el primer token disponible de la entrada (el \textit{lookahead}). Si el token no coincide con ninguno de los conjuntos de inicio de las producciones disponibles, se genera un \textbf{error sintáctico}, indicando una transgresión de las leyes del lenguaje \cite{aho2006compilers}.
+\end{observacion}
+
+\begin{fisicaconexion}{Homomorfismos de estructura}
+El mapeo entre una gramática y un programa de descenso recursivo es un ejemplo de homomorfismo estructural. En física, esto se asemeja a la relación entre la simetría de un potencial y la forma funcional de sus soluciones (por ejemplo, funciones esféricas armónicas para potenciales centrales). La «forma» de la ley física (la gramática) dicta inequívocamente la arquitectura del sistema que la obedece (el código del parser).
+\end{fisicaconexion}
+
+\subsection{Algoritmo General de Implementación}
+\label{subsec:3_5_3_algoritmo_general}
+
+La construcción de un \textit{parser} de descenso recursivo se sistematiza mediante la creación de una colección de subprogramas donde la lógica interna de cada uno depende estrictamente de las producciones del no terminal correspondiente \cite{aho2006compilers}. El siguiente algoritmo describe el proceso meta-computacional para generar la estructura de control de un \textit{parser} predictivo basado en la gramática \eqk{G}.
+
+\begin{algorithm}[H]
+\caption{Lógica general de construcción para un parser de descenso recursivo}
+\label{alg:rd_general}
+\DontPrintSemicolon
+\ForEach{no terminal $\equ{A}$ de la gramática}{
+    Definir una función $\eqfn{A()}$ que ejecute:\;
+    \ForEach{producción $\equ{A} \eqop{\rightarrow} \equ{w}$}{
+        $\equ{Lexema} \eqop{\leftarrow} \eqk{lookahead}$ \tcp*{Consultar token actual}
+        \If{$\equ{Lexema}$ coincide con el inicio de $\equ{w}$}{
+            $\eqfn{Seleccionar}$ esta rama de producción\;
+            \ForEach{símbolo $\equ{s}$ en la secuencia $\equ{w}$}{
+                \If{$\equ{s}$ es un Terminal}{
+                    $\eqfn{match}(\equ{s})$ \tcp*{Consumir token y avanzar}
+                }
+                \ElseIf{$\equ{s}$ es un No Terminal}{
+                    $\eqfn{s()}$ \tcp*{Llamada recursiva al subprograma}
+                }
+            }
+        }
+    }
+    \If{ninguna rama coincide}{
+        $\eqfn{error}()$ \tcp*{Transgresión sintáctica detectada}
+    }
+}
+\end{algorithm}
+
+Este algoritmo garantiza que el proceso de parseo siga fielmente la \textbf{derivación por la izquierda}, ya que las funciones se invocan en el mismo orden en que los no terminales aparecen en la regla de producción \cite{aho2006compilers}. Es vital que para una gramática $\eqk{LL}(\eqop{1})$, la intersección de los conjuntos de inicio de todas las producciones de un mismo no terminal sea vacía, asegurando que la selección de la rama en los condicionales sea determinista \cite{aho2006compilers,sipser2012introduction}.
+
+\begin{observacion}{Implementación en Lenguajes de Alto Nivel}
+En lenguajes como \eqk{C} o \eqk{Java}, este algoritmo se traduce en un conjunto de funciones mutuamente recursivas. El símbolo $\eqk{lookahead}$ suele almacenarse en una variable global o un puntero gestionado por el analizador léxico ($\eqfn{lex}$), el cual es actualizado cada vez que una hoja del árbol (terminal) es validada con éxito \cite{aho2006compilers}.
+\end{observacion}
+
+\subsection{Caso de Estudio: Expresiones Aritméticas}
+\label{subsec:3_5_4_caso_estudio}
+
+Para ilustrar la mecánica del descenso recursivo, consideremos una gramática simplificada para expresiones aritméticas que maneja la precedencia de operadores mediante niveles jerárquicos de no terminales \cite{aho2006compilers}:
+\begin{align*}
+\eqk{\langle} \equ{expr} \eqk{\rangle} &\eqop{\rightarrow} \eqk{\langle} \equ{term} \eqk{\rangle} \eqdom{\{} (\eqk{+} \mid \eqk{-}) \eqk{\langle} \equ{term} \eqk{\rangle} \eqdom{\}} \\
+\eqk{\langle} \equ{term} \eqk{\rangle} &\eqop{\rightarrow} \eqk{\langle} \equ{factor} \eqk{\rangle} \eqdom{\{} (\eqk{*} \mid \eqk{/}) \eqk{\langle} \equ{factor} \eqk{\rangle} \eqdom{\}} \\
+\eqk{\langle} \equ{factor} \eqk{\rangle} &\eqop{\rightarrow} \eqk{id} \eqop{\mid} \eqk{(} \eqk{\langle} \equ{expr} \eqk{\rangle} \eqk{)}
+\end{align*}
+
+En la implementación en \eqk{C}, cada una de estas reglas se traduce en una función. El parser utiliza un analizador léxico (\eqfn{lex}) que actualiza de forma global la variable \equ{nextToken} con el código del siguiente símbolo \cite{aho2006compilers}.
+
+\begin{ejemplo}{Implementación del parser en C}
+A continuación se presentan los fragmentos de código para procesar los niveles de la expresión:
+
+\begin{lstlisting}[style=c, caption={Funciones de descenso recursivo para expresiones}]
+/* Procesa: <expr> -> <term> {(+ | -) <term>} */
+void expr() {
+    term(); // Llama al siguiente nivel de jerarquía
+    while (nextToken == ADD_OP || nextToken == SUB_OP) {
+        lex();  // Consume el operador
+        term(); // Procesa el siguiente término
+    }
+}
+
+/* Procesa: <factor> -> id | (<expr>) */
+void factor() {
+    if (nextToken == ID_CODE) {
+        lex(); // Caso base: identificador
+    } else if (nextToken == LP_CODE) {
+        lex(); // Consume '('
+        expr(); // Llamada recursiva al nivel superior
+        if (nextToken == RP_CODE)
+            lex(); // Consume ')'
+        else
+            error(); // Paréntesis no balanceado
+    } else {
+        error(); // Error sintáctico
+    }
+}
+\end{lstlisting}
+\end{ejemplo}
+
+La ejecución de estas funciones genera un rastro de llamadas que corresponde exactamente a la construcción de un árbol sintáctico concreto en preorden. Para una cadena como $\eqk{id * (id + id)}$, el flujo de control descendería desde \eqfn{expr} hasta \eqfn{factor}, saltaría de nuevo a \eqfn{expr} al encontrar el paréntesis, y finalmente retornaría cerrando cada nivel de la pila de llamadas \cite{aho2006compilers}.
+
+\begin{acadtable}{tab:trace_rd}{Trazado de ejecución del parser para la cadena \texttt{id + id * id}}
+  \begin{tabularx}{\textwidth}{L{4cm} X}
+    \toprule
+    \headerrow \thead{Acción de Control} & \thead{Estado de la Derivación / Análisis} \\ \midrule
+    \eqfn{Call} \eqfn{expr}() & Inicia el análisis de la raíz \equ{expr}. \\
+    \eqfn{Call} \eqfn{term}() & Desciende para verificar precedencia. \\
+    \eqfn{Call} \eqfn{factor}() & Alcanza el primer operando. \\
+    \eqfn{Match} \eqk{id} & El \equ{nextToken} coincide con un identificador. \\
+    \eqfn{Exit} \eqfn{factor}() & Retorna al nivel de término. \\
+    \eqfn{Match} \eqk{+} & \eqfn{expr}() detecta operador de suma en el bucle \texttt{while}. \\
+    $\dots$ & El proceso se repite recursivamente para el resto de la cadena. \\
+    \bottomrule
+  \end{tabularx}
+\end{acadtable}
+
+\subsection{Limitaciones y la Recursión a la Izquierda}
+\label{subsec:3_5_5_limitaciones}
+
+A pesar de su naturaleza intuitiva y facilidad de implementación, los \textit{parsers} descendentes (específicamente la familia \eqk{LL}) imponen restricciones severas sobre la forma de la gramática. El obstáculo técnico más crítico es la \textbf{recursión a la izquierda} \cite{aho2006compilers}.
+
+\begin{definicion}{Recursión a la Izquierda}
+Una gramática posee recursión a la izquierda si existe un no terminal $\equ{A}$ tal que $\equ{A} \eqop{\Rightarrow}\eqop{^+} \equ{A}\equ{\alpha}$ para alguna cadena $\equ{\alpha}$ \cite{sipser2012introduction}. En el contexto de un \textit{parser} de descenso recursivo, esto se traduce en una regla donde el primer símbolo del lado derecho es el propio no terminal:
+\[ \equ{E} \eqop{\rightarrow} \equ{E} \eqop{+} \equ{T} \]
+\end{definicion}
+
+Desde la perspectiva de la programación, la regla anterior causaría que la función \texttt{expr()} se invoque a sí misma inmediatamente antes de consumir cualquier token o realizar una prueba de condición, derivando en una \textbf{recursión infinita} y un eventual desbordamiento de la pila (\textit{stack overflow}) \cite{aho2006compilers}.
+
+Para que una gramática sea procesable por un algoritmo $\eqk{LL}(\eqop{1})$, debe cumplir adicionalmente con el requisito de \textbf{determinismo predictivo}:
+\begin{itemize}
+    \item \textbf{Conjuntos de Inicio Disjuntos:} Para un no terminal con múltiples producciones $\equ{A} \eqop{\rightarrow} \equ{\alpha} \eqop{\mid} \equ{\beta}$, los conjuntos de tokens que pueden iniciar $\equ{\alpha}$ y $\equ{\beta}$ deben ser disjuntos \cite{aho2006compilers,sipser2012introduction}. 
+    \item \textbf{Factorización a la Izquierda:} Si dos reglas comparten un prefijo común (por ejemplo, $\equ{if} \dots$ e $\equ{if} \dots \equ{else} \dots$), la gramática debe ser factorizada para posponer la decisión hasta que el \textit{lookahead} encuentre el símbolo que las diferencia \cite{aho2006compilers}.
+\end{itemize}
+
+\begin{observacion}{Solución mediante transformación}
+Cuando un lenguaje requiere naturalmente de recursión a la izquierda (común en operadores asociativos por la izquierda), el ingeniero debe transformar la gramática eliminando la recursión mediante el uso de \eqk{EBNF} (notación iterativa) o convirtiéndola en recursión a la derecha, aunque esto último puede alterar la precedencia si no se gestiona con cuidado \cite{aho2006compilers}.
+\end{observacion}
+
+\begin{fisicaconexion}{Singularidades y atractores en algoritmos}
+La recursión a la izquierda en un \textit{parser} descendente actúa como una singularidad matemática en un sistema dinámico. En física, un atractor es un estado hacia el cual el sistema evoluciona; la recursión a la izquierda es un «atractor de ciclo infinito» donde el flujo de control queda atrapado en un bucle sin consumo de energía (información/tokens). Para estabilizar el sistema, se requiere una reconfiguración de las leyes de transición (la gramática) que rompa la simetría de la auto-referencia inmediata.
+\end{fisicaconexion}
+
+\section{Análisis Sintáctico Ascendente (Bottom-up Parsing)}
+\label{sec:3_6_bottom_up}
+
+El análisis sintáctico ascendente representa el enfoque más potente y versátil en la ingeniería de compiladores moderna \cite{aho2006compilers}. A diferencia de la estrategia descendente, que intenta expandir la raíz hasta alcanzar las hojas, un \textit{parser} ascendente comienza con los tokens de entrada y busca reconstruir el árbol de parseo mediante un proceso de \textbf{reducción} sucesiva hasta converger en el símbolo inicial $\eqk{S}$ \cite{aho2006compilers}.
+
+\subsection{Fundamentos del Análisis Ascendente}
+\label{subsec:3_6_1_fundamentos_ascendente}
+
+La mecánica fundamental de este enfoque consiste en localizar, dentro de una forma sentencial, una subcadena que coincida con el lado derecho (\textit{RHS}) de alguna regla de producción, para luego sustituirla por el no terminal correspondiente (\textit{LHS}) \cite{aho2006compilers}. Este proceso es equivalente a reconstruir una \textbf{derivación por la derecha en reversa} \cite{aho2006compilers,sipser2012introduction}.
+
+\begin{definicion}{Reducción y Handle (Mango)}
+Sea $\eqten{\gamma}$ una forma sentencial derecha. Una \textbf{reducción} es el paso inverso a una producción, denotado como $\equ{A} \eqop{\leftarrow} \eqten{\beta}$, donde una subcadena de $\eqten{\gamma}$ que coincide con $\eqten{\beta}$ es reemplazada por $\equ{A}$ \cite{sipser2012introduction,aho2006compilers}. 
+
+Se denomina \textbf{handle} (o mango) a la subcadena $\eqten{\beta}$ de una forma sentencial derecha $\eqten{\alpha\beta w}$ tal que su reducción mediante la regla $\equ{A} \eqop{\rightarrow} \eqten{\beta}$ representa un paso válido en el reverso de una derivación por la derecha desde el símbolo inicial $\eqk{S}$ \cite{sipser2012introduction}.
+\end{definicion}
+
+En la práctica, el éxito del \textit{parsing} ascendente depende de la capacidad del algoritmo para identificar inequívocamente el \textit{handle} en cada paso. Si el \textit{parser} selecciona una reducción incorrecta, podría llegar a una configuración desde la cual es imposible alcanzar la raíz $\eqk{S}$, incluso si la cadena original pertenecía al lenguaje \cite{sipser2012introduction,aho2006compilers}.
+
+\begin{fisicaconexion}{Síntesis de estados y reducción de grados de libertad}
+El \textit{parsing} ascendente es análogo al proceso de síntesis en mecánica estadística o termodinámica. Partimos de estados microscópicos individuales (tokens $\eqk{w}$) y, mediante leyes de asociación (gramática), reducimos los grados de libertad del sistema hasta obtener una descripción macroscópica coherente (el símbolo inicial $\eqk{S}$). La identificación del \textit{handle} equivale a encontrar el nivel de organización jerárquica inmediatamente superior que conserva las leyes de balance del sistema global.
+\end{fisicaconexion}
+
+\subsection{La Familia de Parsers \eqk{LR}}
+\label{subsec:3_6_2_familia_lr}
+
+La clase más importante de algoritmos ascendentes es la familia \eqk{LR}, introducida originalmente por Donald Knuth en 1965 \cite{aho2006compilers}. Su nomenclatura describe su modo de operación \cite{aho2006compilers}:
+
+\begin{itemize}
+    \item \textbf{\eqk{L} (\textit{Left-to-right scanning}):} Escanea la entrada de izquierda a derecha.
+    \item \textbf{\eqk{R} (\textit{Rightmost derivation in reverse}):} Construye el reverso de una derivación por la derecha.
+    \item \textbf{\eqk{k} (\textit{Lookahead}):} Indica el número de símbolos de anticipación utilizados para tomar decisiones (típicamente $\eqop{k} \eqop{=} \eqk{1}$ o $\eqop{k} \eqop{=} \eqk{0}$).
+\end{itemize}
+
+Los \textit{parsers} \eqk{LR} son considerados los más potentes para gramáticas deterministas libres de contexto porque no requieren factorizar la gramática ni eliminar la recursividad a la izquierda, a diferencia de los \textit{parsers} \eqk{LL} \cite{aho2006compilers}. Dentro de esta familia, existen distintos niveles de potencia basados en la complejidad de sus tablas de decisión:
+
+\begin{enumerate}
+    \item \textbf{\eqk{LR(0)}:} El modelo más restrictivo, donde las decisiones se toman exclusivamente basadas en el estado del autómata, sin consultar tokens de entrada \cite{aho2006compilers}.
+    \item \textbf{\eqk{SLR(1)} (\textit{Simple LR}):} Utiliza los conjuntos de seguimiento (\textit{FOLLOW}) de la gramática para resolver conflictos simples en las reducciones \cite{aho2006compilers}.
+    \item \textbf{\eqk{LALR(1)} (\textit{Look-Ahead LR}):} Es el estándar industrial utilizado por herramientas como \eqk{Yacc} y \eqk{Bison}. Ofrece un equilibrio óptimo entre la potencia de reconocimiento del \eqk{LR} Canónico y la eficiencia de memoria de las tablas del \eqk{SLR} \cite{aho2006compilers}.
+    \item \textbf{\eqk{LR(1)} Canónico:} El más potente de todos, capaz de reconocer cualquier lenguaje determinista libre de contexto, aunque genera tablas significativamente más voluminosas \cite{sipser2012introduction,aho2006compilers}.
+\end{enumerate}
+
+\begin{observacion}{Pragmatismo del estándar LALR}
+A pesar de la existencia del \eqk{LR(1)} Canónico, la mayoría de los lenguajes de programación modernos (Java, C, Python) se diseñan para ser procesados por \eqk{LALR(1)}. Esto se debe a que las herramientas automáticas de generación de \textit{parsers} optimizan el tamaño de las tablas de estados, permitiendo un análisis sintáctico de alto rendimiento con un consumo de recursos mínimo \cite{aho2006compilers}.
+\end{observacion}
+
+\subsection{Arquitectura y Configuración del Parser}
+\label{subsec:3_6_3_arquitectura}
+
+El funcionamiento de un \textit{parser} LR se modela mediante un autómata de pila determinista que mantiene un registro tanto de los símbolos gramaticales reconocidos como de los estados del autómata de control \cite{aho2006compilers}. La arquitectura del sistema se compone de una pila de análisis, el flujo de entrada y un motor de ejecución basado en tablas, como se ilustra en la Figura \ref{fig:lr_architecture}.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[node distance=1.5cm, >=latex, font=\small]
+        % Representación de la Pila
+        \node (stack_label) at (0,0.5) {\textbf{Pila de Análisis}};
+        \draw (0,0) rectangle (4, -1);
+        \node at (0.5,-0.5) {$\eqk{S_0}$};
+        \node at (1.2,-0.5) {$\equ{X_1}$};
+        \node at (1.9,-0.5) {$\eqk{S_1}$};
+        \node at (2.6,-0.5) {$\dots$};
+        \node at (3.3,-0.5) {$\eqk{S_m}$};
+        \draw (0.9,0) -- (0.9,-1); \draw (1.5,0) -- (1.5,-1); \draw (2.2,0) -- (2.2,-1); \draw (2.9,0) -- (2.9,-1);
+        \node (top) at (3.3, -1.3) {Top};
+        \draw[->] (top) -- (3.3,-1.1);
+
+        % Representación de la Entrada
+        \node (input_label) at (8,0.5) {\textbf{Entrada}};
+        \draw (6,0) rectangle (10, -1);
+        \node at (6.5,-0.5) {$\eqk{a_i}$};
+        \node at (7.5,-0.5) {$\eqk{a_{i+1}}$};
+        \node at (8.5,-0.5) {$\dots$};
+        \node at (9.5,-0.5) {$\eqop{\$}$};
+        \draw (7,0) -- (7,-1); \draw (8,0) -- (8,-1); \draw (9,0) -- (9,-1);
+
+        % Motor y Tablas
+        \node[draw, rectangle, minimum width=3cm, minimum height=1.5cm, fill=CtpMantle] (logic) at (5, -3) {
+            \begin{tabular}{c}
+                \textbf{Motor de Control} \\
+                \hline
+                \eqfn{ACTION} / \eqfn{GOTO}
+            \end{tabular}
+        };
+
+        % Conexiones
+        \draw[<->] (3.3, -1) |- (logic);
+        \draw[->] (6.5, -1) |- (logic);
+    \end{tikzpicture}
+    \caption{Arquitectura de un parser LR: interacción entre la pila, la entrada y las tablas de decisión \cite{aho2006compilers}.}
+    \label{fig:lr_architecture}
+\end{figure}
+
+En cualquier instante, el estado total del proceso se describe mediante una \textbf{configuración}, que es un par ordenado que captura la memoria del sistema y la información pendiente de procesar \cite{aho2006compilers}.
+
+\begin{definicion}{Configuración LR}
+Una configuración de un \textit{parser} LR se denota como el par $\eqten{(\text{Pila, Entrada})}$, donde \cite{aho2006compilers}:
+\begin{itemize}
+    \item \textbf{Pila:} $\eqk{S_0} \equ{X_1} \eqk{S_1} \equ{X_2} \eqk{S_2} \dots \equ{X_m} \eqk{S_m}$. Donde cada $\eqk{S_i}$ es un estado del autómata y cada $\equ{X_i}$ es un símbolo de la gramática (terminal o no terminal).
+    \item \textbf{Entrada:} $\eqk{a_i a_{i+1} \dots a_n} \eqop{\$}$. Donde $\eqk{a_i}$ es el token actual y $\eqop{\$}$ es el delimitador de finalización.
+\end{itemize}
+\end{definicion}
+
+\subsection{Mecánica de las Tablas Action y Goto}
+\label{subsec:3_6_4_tablas}
+
+La lógica de transición del \textit{parser} no se implementa mediante código condicional \textit{ad-hoc}, sino a través de dos tablas de datos que dirigen el flujo de control basándose en la configuración actual \cite{aho2006compilers}.
+
+\begin{itemize}
+    \item \textbf{Tabla \eqfn{ACTION}:} Mapea el par $(\text{Estado actual } \eqk{S_m}, \text{ Token actual } \eqk{a_i})$ a una de cuatro operaciones fundamentales \cite{aho2006compilers}:
+    \begin{enumerate}
+        \item \textbf{Desplazamiento (\textit{Shift S}):} Se empuja el token $\eqk{a_i}$ y el nuevo estado $\eqk{S}$ a la pila, avanzando el cabezal de entrada.
+        \item \textbf{Reducción (\textit{Reduce } $\equ{A} \eqop{\rightarrow} \eqten{\beta}$):} Se aplican las reglas gramaticales en reversa. Si $\eqten{\beta}$ tiene longitud $r$, se extraen $2r$ elementos de la pila y se consulta la tabla \eqfn{GOTO}.
+        \item \textbf{Aceptación (\textit{Accept}):} Se notifica el éxito del análisis sintáctico.
+        \item \textbf{Error:} Se invoca una rutina de recuperación y diagnóstico.
+    \end{enumerate}
+    \item \textbf{Tabla \eqfn{GOTO}:} Determina el siguiente estado de la pila tras una reducción, basándose en el estado que queda al descubierto y el no terminal $\equ{A}$ que ha sido sintetizado \cite{aho2006compilers}.
+\end{itemize}
+
+\begin{observacion}{Determinismo y Conflictos}
+Un lenguaje es \eqk{LR} si sus tablas de acción carecen de ambigüedad. En gramáticas mal diseñadas, pueden surgir conflictos de tipo \textbf{Shift/Reduce} (incertidumbre sobre si seguir leyendo o reducir) o \textbf{Reduce/Reduce} (múltiples reglas aplicables al mismo \textit{handle}), lo que impide la construcción de un \textit{parser} determinista \cite{aho2006compilers}.
+\end{observacion}
+
+\subsection{Caso de Estudio: Traza de Análisis para Expresiones}
+\label{subsec:3_6_5_caso_estudio}
+
+Para demostrar la mecánica operativa de un \textit{parser} ascendente, utilizaremos una gramática de expresiones aritméticas estándar, la cual codifica la precedencia de la multiplicación sobre la suma \cite{aho2006compilers}:
+\begin{multicols}{2}
+\begin{enumerate}
+    \item $\equ{E} \eqop{\rightarrow} \equ{E} \eqop{+} \equ{T}$
+    \item $\equ{E} \eqop{\rightarrow} \equ{T}$
+    \item $\equ{T} \eqop{\rightarrow} \equ{T} \eqop{*} \equ{F}$
+    \item $\equ{T} \eqop{\rightarrow} \equ{F}$
+    \item $\equ{F} \eqop{\rightarrow} \eqk{(} \equ{E} \eqk{)}$
+    \item $\equ{F} \eqop{\rightarrow} \eqk{id}$
+\end{enumerate}
+\end{multicols}
+
+La toma de decisiones del autómata se rige por la tabla de \textit{parsing} (Cuadro \ref{tab:lr_table_complete}), donde cada celda indica si se debe realizar un desplazamiento (\eqk{s}), una reducción (\eqop{r}) o si se ha alcanzado la aceptación \cite{aho2006compilers}.
+
+\begin{acadtable}{tab:lr_table_complete}{Tabla de Action/Goto para la gramática de expresiones \cite{aho2006compilers}}
+    \begin{tabular}{c|cccccc|ccc}
+        \toprule
+        \headerrow & \multicolumn{6}{c|}{\eqfn{ACTION}} & \multicolumn{3}{c}{\eqfn{GOTO}} \\
+        \thead{Estado} & \thead{\eqk{id}} & \thead{\eqk{+}} & \thead{\eqk{*}} & \thead{\eqk{(}} & \thead{\eqk{)}} & \thead{\eqop{\$}} & \thead{\equ{E}} & \thead{\equ{T}} & \thead{\equ{F}} \\ \midrule
+        \eqk{0} & \eqk{s5} & & & \eqk{s4} & & & \eqk{1} & \eqk{2} & \eqk{3} \\
+        \eqk{1} & & \eqk{s6} & & & & \eqfn{accept} & & & \\
+        \eqk{2} & & \eqop{r2} & \eqk{s7} & & \eqop{r2} & \eqop{r2} & & & \\
+        \eqk{3} & & \eqop{r4} & \eqop{r4} & & \eqop{r4} & \eqop{r4} & & & \\
+        \eqk{4} & \eqk{s5} & & & \eqk{s4} & & & \eqk{8} & \eqk{2} & \eqk{3} \\
+        \eqk{5} & & \eqop{r6} & \eqop{r6} & & \eqop{r6} & \eqop{r6} & & & \\ \bottomrule
+    \end{tabular}
+\end{acadtable}
+
+A continuación, se presenta la traza de ejecución para la cadena $\eqk{id * id + id}$. Observe cómo el \textit{parser} «sintetiza» la estructura desde los operandos base hacia la raíz de la gramática \cite{aho2006compilers}.
+
+\begin{ejemplo}{Traza de parseo ascendente}
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{L{5cm} X R{4cm}}
+    \toprule
+    \headerrow \thead{Pila de Estados} & \thead{Entrada} & \thead{Acción} \\ \midrule
+    \eqk{0} & \eqk{id * id + id} \eqop{\$} & \eqk{Shift 5} \\
+    \eqk{0} \eqk{id} \eqk{5} & \eqk{* id + id} \eqop{\$} & \eqop{Reduce 6} (\eqk{GOTO[0,F]}) \\
+    \eqk{0} \equ{F} \eqk{3} & \eqk{* id + id} \eqop{\$} & \eqop{Reduce 4} (\eqk{GOTO[0,T]}) \\
+    \eqk{0} \equ{T} \eqk{2} & \eqk{* id + id} \eqop{\$} & \eqk{Shift 7} \\
+    \eqk{0} \equ{T} \eqk{2} \eqk{*} \eqk{7} & \eqk{id + id} \eqop{\$} & \eqk{Shift 5} \\
+    \eqk{0} \equ{T} \eqk{2} \eqk{*} \eqk{7} \eqk{id} \eqk{5} & \eqk{+ id} \eqop{\$} & \eqop{Reduce 6} (\eqk{GOTO[7,F]}) \\
+    \eqk{0} \equ{T} \eqk{2} \eqk{*} \eqk{7} \equ{F} \eqk{10} & \eqk{+ id} \eqop{\$} & \eqop{Reduce 3} (\eqk{GOTO[0,T]}) \\
+    \dots & \dots & \dots \\
+    \eqk{0} \equ{E} \eqk{1} & \eqop{\$} & \eqfn{ACCEPT} \\ \bottomrule
+\end{tabularx}
+\end{center}
+\end{ejemplo}
+
+\begin{fisicaconexion}{Conservación de la información en reducciones}
+El proceso de \textit{reduce} en un parser LR es análogo a la ley de conservación de la energía en una cascada turbulenta. En un fluido, pequeños remolinos se agregan para formar estructuras coherentes de mayor escala sin perder la masa o el momento del sistema original. De igual forma, el \textit{parser} agrega tokens (energía microscópica) en variables no terminales (estructuras macroscópicas), asegurando que la «masa» de la cadena original sea conservada y representada íntegramente por el símbolo inicial $\eqk{S}$.
+\end{fisicaconexion}
+
+\section{Sintaxis vs. Semántica}
+\label{sec:3_7_sintaxis_semantica}
+
+Hasta este punto, el análisis sintáctico se ha centrado exclusivamente en la \textbf{forma} del programa, garantizando que la secuencia de tokens obedezca las leyes estructurales de la gramática \cite{aho2006compilers}. Sin embargo, un compilador funcional debe trascender la validación estructural para abordar el \textbf{significado} de las construcciones, un dominio conocido como análisis semántico \cite{aho2006compilers}.
+
+\subsection{La Frontera entre Forma y Significado}
+\label{subsec:3_7_1_frontera}
+
+La distinción entre sintaxis y semántica define las dos responsabilidades principales del \textit{front-end} \cite{aho2006compilers}:
+
+\begin{definicion}{Sintaxis y Semántica}
+En el diseño de lenguajes de programación, se establece la siguiente dicotomía \cite{aho2006compilers,sipser2012introduction}:
+\begin{itemize}
+    \item \textbf{Sintaxis:} Se refiere a la apariencia y estructura superficial de un programa válido. Se describe convenientemente mediante una Gramática Libre de Contexto (\eqk{Tipo-2}).
+    \item \textbf{Semántica:} Se refiere al significado y comportamiento de las construcciones sintácticas. Incluye reglas de tipo (\textbf{semántica estática}), comprobables en tiempo de compilación, y reglas de ejecución (\textbf{semántica dinámica}), que definen el efecto del programa durante su corrida.
+\end{itemize}
+\end{definicion}
+
+El analizador semántico actúa como un filtro que procesa el árbol de parseo generado por el \textit{parser}, recolectando información para la tabla de símbolos y verificando la consistencia de tipos, preparando así el terreno para el generador de código intermedio \cite{aho2006compilers}.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[node distance=2cm, >=latex, font=\small]
+        % Bloques principales
+        \node[draw, rectangle, fill=CtpBase, minimum width=2cm] (lexer) {Lexer};
+        \node[draw, rectangle, fill=CtpBase, minimum width=2cm, right of=lexer, xshift=1cm] (parser) {Parser};
+        \node[draw, rectangle, fill=CtpMantle, minimum width=2.5cm, right of=parser, xshift=1.5cm] (semantic) {Analizador Semántico};
+        
+        % Flujo
+        \draw[->] (lexer) -- node[above] {Tokens} (parser);
+        \draw[->] (parser) -- node[above] {Árbol de Parseo} (semantic);
+        \draw[->] (semantic) -- ++(3,0) node[right] {AST / IR};
+        
+        % Etiqueta de Semántica
+        \node[draw, rectangle, dashed, fit=(semantic), inner sep=0.3cm, label=above:Significado] (significado) {};
+        \node[draw, rectangle, dashed, fit=(lexer) (parser), inner sep=0.3cm, label=above:Forma] (forma) {};
+    \end{tikzpicture}
+    \caption{Flujo de datos y transición de la forma al significado en el front-end \cite{aho2006compilers}.}
+    \label{fig:3_7_data_flow}
+\end{figure}
+
+\subsection{Gramáticas de Atributos y Árboles Decorados}
+\label{subsec:3_7_2_gramaticas_atributos}
+
+Para formalizar la semántica dentro de la estructura gramatical, se utilizan las \textbf{Gramáticas de Atributos}. Estas representan una extensión de las CFG donde cada símbolo de la gramática tiene asociados valores o «atributos» que describen sus propiedades \cite{aho2006compilers}.
+
+\begin{definicion}{Gramática de Atributos}
+Una gramática de atributos es una CFG aumentada con un conjunto de reglas semánticas que definen cómo se calculan los valores de los atributos para cada producción. Si $\equ{X}$ es un símbolo gramatical, su atributo se denota como $\equ{X}.\equ{val}$ \cite{aho2006compilers}.
+\end{definicion}
+
+En una gramática de atributos, el proceso de computar estos valores se denomina \textbf{decoración del árbol}. Los atributos pueden ser de dos tipos:
+\begin{enumerate}
+    \item \textbf{Sintetizados:} Fluyen desde las hojas (terminales) hacia la raíz (padre). El valor del padre se calcula en función de los hijos.
+    \item \textbf{Heredados:} Fluyen desde el padre o hermanos hacia el nodo actual, permitiendo que el contexto superior dicte propiedades a los constructos inferiores.
+\end{enumerate}
+
+\begin{ejemplo}{Esquema de traducción semántica}
+Consideremos la regla para una suma. En una gramática de atributos, la producción se complementa con una asignación semántica \cite{aho2006compilers}:
+\begin{align*}
+\eqk{\langle} \equ{E_1} \eqk{\rangle} &\eqop{\rightarrow} \eqk{\langle} \equ{E_2} \eqk{\rangle} \eqk{+} \eqk{\langle} \equ{T} \eqk{\rangle} \\
+&\eqop{\triangleright} \equ{E_1}.\equ{val} \eqop{:=} \eqfn{sum}(\equ{E_2}.\equ{val}, \equ{T}.\equ{val})
+\end{align*}
+Aquí, el atributo $\equ{val}$ es sintetizado, ya que el resultado del constructo $\equ{E_1}$ depende estrictamente de la suma de sus componentes inferiores.
+\end{ejemplo}
+
+\begin{fisicaconexion}{Propagación de campos en mallas computacionales}
+La decoración de un árbol sintáctico es análoga a la propagación de valores en una malla de elementos finitos o una red de celdas. Así como en un \textit{parser} los atributos de un nodo dependen de los valores calculados en sus nodos hijos (vecinos), en la simulación de transferencia de calor el potencial térmico en un nodo de la malla se determina mediante una función de balance de sus nodos adyacentes. En ambos sistemas, una estructura estática (el árbol o la malla) sirve de andamiaje para un proceso dinámico de flujo de información.
+\end{fisicaconexion}
+
+\subsection{Hacia la Abstracción: El Árbol Sintáctico Abstracto (AST)}
+\label{subsec:3_7_3_ast}
+
+Una vez que el \textit{parser} ha validado la estructura de la entrada, el árbol de parseo (o árbol sintáctico concreto) suele contener un exceso de información gramatical que no es necesaria para la generación de código, como paréntesis de agrupamiento o palabras clave de delimitación \cite{aho2006compilers}. Para optimizar el análisis posterior, el compilador refina esta estructura en un \textbf{Árbol Sintáctico Abstracto (AST)} \cite{aho2006compilers}.
+
+\begin{definicion}{Árbol Sintáctico Abstracto (AST)}
+El AST es una representación simplificada y jerárquica del programa donde cada nodo interno representa un operador o constructo lógico, y los hijos representan sus operandos. A diferencia del árbol concreto, el AST elimina el «ruido sintáctico», conservando únicamente los elementos esenciales para el análisis semántico y la traducción \cite{aho2006compilers}.
+\end{definicion}
+
+\begin{observacion}{Eficiencia del AST}
+Mientras que un árbol concreto para una expresión como $\eqk{(}\equ{3}\eqop{+}\equ{5}\eqk{)}$ incluiría nodos para los paréntesis, el AST se simplificaría a un único nodo raíz $\eqop{+}$ con dos hojas $\equ{3}$ y $\equ{5}$. Esta compactación reduce significativamente la memoria necesaria para representar programas extensos y facilita el recorrido del árbol durante la optimización \cite{aho2006compilers}.
+\end{observacion}
+
+\subsection{Implementación Semántica con Lark}
+\label{subsec:3_7_4_implementacion}
+
+En la ingeniería de lenguajes moderna, herramientas como \textbf{Lark} \cite{lark2025} permiten asociar acciones semánticas directamente a las producciones gramaticales, utilizando \textit{transformers} para construir el AST de forma declarativa a partir de la gramática EBNF.
+
+\begin{ejemplo}{Construcción de AST con Lark}
+A continuación, se muestra cómo definir una gramática en EBNF y construir el AST mediante un \textit{transformer} en Python:
+
+\begin{lstlisting}[style=python, caption={Implementación de semántica y AST con Lark}]
+from lark import Lark, Transformer
+
+# Gramática en EBNF (conexión directa con la sección 3.3)
+grammar = r"""
+    ?expr: term {("+" | "-") term}    -> sum
+    ?term: factor {("*" | "/") factor} -> mul
+    ?factor: NUMBER                   -> number
+           | "(" expr ")"
+    %import common.NUMBER
+    %import common.WS
+    %ignore WS
+"""
+
+# Transformer: convierte el árbol de parseo en AST
+class CalcTransformer(Transformer):
+    def sum(self, items):
+        return ('binary-expression', '+', items[0], items[1])
+    def mul(self, items):
+        return ('binary-expression', '*', items[0], items[1])
+    def number(self, n):
+        return ('number-expression', float(n[0]))
+
+parser = Lark(grammar, start='expr')
+tree = parser.parse("3 + 4 * 5")
+ast = CalcTransformer().transform(tree)
+\end{lstlisting}
+\end{ejemplo}
+
+Esta metodología permite que el compilador no solo valide que una expresión como \texttt{3 + 4 * 5} es sintácticamente correcta, sino que también genere un AST que preserva la precedencia de operadores dictada por la gramática. El \textit{transformer} actúa como un decorador del árbol: recorre el parse tree en orden ascendente y aplica las reglas semánticas definidas para cada producción.
+
+\begin{fisicaconexion}{Reducción de dimensionalidad}
+La transición del árbol de parseo al AST es un proceso de reducción de dimensionalidad informativa. En física de partículas o procesamiento de señales, se aplican filtros para eliminar el ruido de fondo y conservar únicamente los picos de energía (señal útil). De forma análoga, el AST es la «señal» pura del algoritmo original, despojada de las convenciones ortográficas del lenguaje fuente que no contribuyen a la lógica de ejecución.
+\end{fisicaconexion}
+
+% =============================================================================
+% RESUMEN DEL CAPÍTULO 3
+% =============================================================================
+
+\section*{Resumen del Capítulo}
+\addcontentsline{toc}{section}{Resumen del Capítulo}
+
+El análisis sintáctico constituye la segunda fase del \textit{front‑end} de un compilador, encargada de transformar la secuencia lineal de tokens en una estructura jerárquica que refleja la organización lógica del programa \cite{aho2006compilers}. Este capítulo ha recorrido el camino que va desde la teoría formal de Gramáticas Libres de Contexto (CFG) hasta los algoritmos de parsing y la construcción del Árbol Sintáctico Abstracto.
+
+Partiendo del formalismo de Sipser \cite{sipser2012introduction}, se definió la 4‑tupla $G = (T, N, S, P)$, las relaciones de derivación, los árboles de parseo y el problema de la ambigüedad gramatical. La insuficiencia de los lenguajes regulares para manejar estructuras anidadas como $a^n b^n$ justificó la necesidad de los autómatas de pila y de las CFG (\eqk{Tipo-2}) como núcleo del análisis sintáctico.
+
+La \textbf{Jerarquía de Chomsky} (Sección 3.2) proporcionó el marco taxonómico completo, clasificando las gramáticas desde las irrestrictas (\eqk{Tipo-0}) hasta las regulares (\eqk{Tipo-3}), y mapeando cada nivel a su modelo computacional asociado (Máquina de Turing, Autómata Linealmente Acotado, Autómata de Pila, Autómata Finito). Se justificó por qué las CFG ofrecen el equilibrio óptimo entre expresividad y eficiencia algorítmica para los lenguajes de programación.
+
+Las \textbf{notaciones BNF y EBNF} (Sección 3.3) se presentaron como el metalenguaje estándar que conecta la teoría con la implementación. Se demostró la equivalencia formal entre ambas mediante transformaciones algebraicas, y se ejemplificó su uso en especificaciones reales como la gramática de tipos de Java.
+
+El núcleo algorítmico se dividió en dos estrategias complementarias. El \textbf{parsing descendente} (Sección 3.5), con la familia $LL(k)$ y la técnica de descenso recursivo, ofreció una implementación intuitiva pero limitada por la recursión a la izquierda. El \textbf{parsing ascendente} (Sección 3.6), con la familia $LR(k)$ y sus variantes $SLR$, $LALR$ y $LR$ canónico, proporcionó la máxima potencia para gramáticas deterministas mediante una arquitectura basada en pila y tablas de \textit{Action/Goto}.
+
+Finalmente, la transición de la forma al significado se abordó en la \textbf{Sección 3.7}. Las gramáticas de atributos formalizaron la decoración del árbol de parseo con información semántica (atributos sintetizados y heredados). El Árbol Sintáctico Abstracto (AST) se presentó como la representación depurada que elimina el ruido sintáctico y conserva únicamente la información esencial para la generación de código. La implementación práctica se ilustró con la herramienta \textbf{Lark} \cite{lark2025}, que unifica lexer y parser mediante gramáticas declarativas en EBNF y permite construir el AST de forma limpia con \textit{transformers}.
+
+En conjunto, el capítulo ha establecido los fundamentos teóricos y las técnicas prácticas que permiten a un compilador «comprender» la estructura de un programa fuente, sentando las bases para el análisis semántico y la generación de código intermedio que se abordarán en los capítulos siguientes.
+
+\printbibliography[segment=\therefsegment, heading=subbibliography]
